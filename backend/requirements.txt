@@ -3,3 +3,4 @@ uvicorn
 pydantic
 python-multipart
 pymongo
+PyJWT==2.8.0
