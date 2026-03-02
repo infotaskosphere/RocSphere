@@ -3,6 +3,7 @@ from roc_router import router as roc_router
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 import os
+import jwt
 
 # Create app
 app = FastAPI()
