@@ -2,39 +2,39 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 
 const TODAY = new Date("2026-03-02");
-const STORAGE_KEY = "roc-tracker-v2";
+const STORAGE_KEY = "rocsphere-v2";
 
 const COMPLIANCE_RULES = [
-  { id:"mgt7a", form:"MGT-7A",         title:"Abridged Annual Return",            cat:"Annual Filing",        section:"Sec 92, Rule 11A",   freq:"Annual",      applies:(c)=>c.isSmallCompany==="Yes"||c.companyType==="OPC",  tags:["Small Co/OPC"] },
-  { id:"mgt7",  form:"MGT-7",          title:"Annual Return",                     cat:"Annual Filing",        section:"Sec 92",             freq:"Annual",      applies:(c)=>c.companyType!=="LLP"&&c.isSmallCompany!=="Yes",  tags:["Non-Small Co"] },
-  { id:"aoc4",  form:"AOC-4",          title:"Financial Statements Filing",       cat:"Annual Filing",        section:"Sec 137",            freq:"Annual",      applies:(c)=>c.companyType!=="LLP",  tags:["All Cos"] },
-  { id:"adt1",  form:"ADT-1",          title:"Appointment of Auditor",            cat:"Annual Filing",        section:"Sec 139",            freq:"Annual/5yr",  applies:(c)=>c.companyType!=="LLP",  tags:["All Cos"] },
-  { id:"dpt3",  form:"DPT-3",          title:"Return of Deposits",                cat:"Statutory Return",     section:"Sec 73/Rule 16",     freq:"Annual",      applies:(c)=>c.companyType!=="LLP",  tags:["Non-LLP"] },
-  { id:"msme1", form:"MSME-1",         title:"Outstanding Dues to MSME",          cat:"Statutory Return",     section:"Sec 405",            freq:"Half-yearly", applies:()=>true,                    tags:["All Cos"] },
-  { id:"dir12", form:"DIR-12",         title:"Change in Directors / KMP",         cat:"Director",             section:"Sec 170",            freq:"Event",       applies:()=>true,                    tags:["All Cos"] },
-  { id:"dir3k", form:"DIR-3 KYC",      title:"Director KYC (Annual)",             cat:"Director",             section:"Rule 12A",           freq:"Annual",      applies:()=>true,                    tags:["All Cos"] },
-  { id:"mgt14", form:"MGT-14",         title:"Filing of Board Resolutions",       cat:"Director",             section:"Sec 117",            freq:"Event",       applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed", tags:["Public/Listed"] },
-  { id:"pas3",  form:"PAS-3",          title:"Return of Allotment",               cat:"Share Capital",        section:"Sec 39/42",          freq:"Event",       applies:()=>true,                    tags:["All Cos"] },
-  { id:"sh7",   form:"SH-7",           title:"Increase in Authorised Capital",    cat:"Share Capital",        section:"Sec 64",             freq:"Event",       applies:()=>true,                    tags:["All Cos"] },
-  { id:"inc22", form:"INC-22",         title:"Change in Registered Office",       cat:"Registered Office",    section:"Sec 12",             freq:"Event",       applies:()=>true,                    tags:["All Cos"] },
-  { id:"xbrl",  form:"AOC-4 XBRL",    title:"XBRL Financial Statements",         cat:"Annual Filing",        section:"MCA XBRL Rules",     freq:"Annual",      applies:(c)=>c.listedStatus==="Listed"||+c.turnover>=500||+c.paidUpCapital>=500, tags:["Listed/Large"] },
-  { id:"csr",   form:"CSR-1/CSR-2",   title:"CSR Registration & Reporting",      cat:"CSR",                  section:"Sec 135",            freq:"Annual",      applies:(c)=>+c.networth>=500||+c.turnover>=1000||+c.netProfit>=5, tags:["NW≥500/TO≥1000 Cr"] },
-  { id:"iepf",  form:"IEPF-1/IEPF-2", title:"IEPF – Unpaid Dividend/Shares",    cat:"Investor Protection",  section:"Sec 125",            freq:"Event",       applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed", tags:["Public/Listed"] },
-  { id:"ben2",  form:"BEN-2",          title:"Significant Beneficial Ownership",  cat:"Statutory Return",     section:"Sec 90",             freq:"Event",       applies:(c)=>c.companyType!=="LLP",  tags:["Non-LLP"] },
-  { id:"chg1",  form:"CHG-1/CHG-4",   title:"Registration / Satisfaction of Charge", cat:"Charges",          section:"Sec 77/82",          freq:"Event",       applies:(c)=>c.hasCharges,           tags:["Cos with Charges"] },
-  { id:"llp8",  form:"Form 8 (LLP)",  title:"Statement of Account & Solvency",  cat:"Annual Filing",        section:"LLP Act 2008",       freq:"Annual",      applies:(c)=>c.companyType==="LLP",  tags:["LLP Only"] },
-  { id:"llp11", form:"Form 11 (LLP)", title:"Annual Return (LLP)",               cat:"Annual Filing",        section:"LLP Act 2008",       freq:"Annual",      applies:(c)=>c.companyType==="LLP",  tags:["LLP Only"] },
+  { id:"mgt7a", form:"MGT-7A", title:"Abridged Annual Return", cat:"Annual Filing", section:"Sec 92, Rule 11A", freq:"Annual", applies:(c)=>c.isSmallCompany==="Yes"||c.companyType==="OPC", tags:["Small Co/OPC"] },
+  { id:"mgt7", form:"MGT-7", title:"Annual Return", cat:"Annual Filing", section:"Sec 92", freq:"Annual", applies:(c)=>c.companyType!=="LLP"&&c.isSmallCompany!=="Yes", tags:["Non-Small Co"] },
+  { id:"aoc4", form:"AOC-4", title:"Financial Statements Filing", cat:"Annual Filing", section:"Sec 137", freq:"Annual", applies:(c)=>c.companyType!=="LLP", tags:["All Cos"] },
+  { id:"adt1", form:"ADT-1", title:"Appointment of Auditor", cat:"Annual Filing", section:"Sec 139", freq:"Annual/5yr", applies:(c)=>c.companyType!=="LLP", tags:["All Cos"] },
+  { id:"dpt3", form:"DPT-3", title:"Return of Deposits", cat:"Statutory Return", section:"Sec 73/Rule 16", freq:"Annual", applies:(c)=>c.companyType!=="LLP", tags:["Non-LLP"] },
+  { id:"msme1", form:"MSME-1", title:"Outstanding Dues to MSME", cat:"Statutory Return", section:"Sec 405", freq:"Half-yearly", applies:()=>true, tags:["All Cos"] },
+  { id:"dir12", form:"DIR-12", title:"Change in Directors / KMP", cat:"Director", section:"Sec 170", freq:"Event", applies:()=>true, tags:["All Cos"] },
+  { id:"dir3k", form:"DIR-3 KYC", title:"Director KYC (Annual)", cat:"Director", section:"Rule 12A", freq:"Annual", applies:()=>true, tags:["All Cos"] },
+  { id:"mgt14", form:"MGT-14", title:"Filing of Board Resolutions", cat:"Director", section:"Sec 117", freq:"Event", applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed", tags:["Public/Listed"] },
+  { id:"pas3", form:"PAS-3", title:"Return of Allotment", cat:"Share Capital", section:"Sec 39/42", freq:"Event", applies:()=>true, tags:["All Cos"] },
+  { id:"sh7", form:"SH-7", title:"Increase in Authorised Capital", cat:"Share Capital", section:"Sec 64", freq:"Event", applies:()=>true, tags:["All Cos"] },
+  { id:"inc22", form:"INC-22", title:"Change in Registered Office", cat:"Registered Office", section:"Sec 12", freq:"Event", applies:()=>true, tags:["All Cos"] },
+  { id:"xbrl", form:"AOC-4 XBRL", title:"XBRL Financial Statements", cat:"Annual Filing", section:"MCA XBRL Rules", freq:"Annual", applies:(c)=>c.listedStatus==="Listed"||+c.turnover>=500||+c.paidUpCapital>=500, tags:["Listed/Large"] },
+  { id:"csr", form:"CSR-1/CSR-2", title:"CSR Registration & Reporting", cat:"CSR", section:"Sec 135", freq:"Annual", applies:(c)=>+c.networth>=500||+c.turnover>=1000||+c.netProfit>=5, tags:["NW≥500/TO≥1000 Cr"] },
+  { id:"iepf", form:"IEPF-1/IEPF-2", title:"IEPF – Unpaid Dividend/Shares", cat:"Investor Protection", section:"Sec 125", freq:"Event", applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed", tags:["Public/Listed"] },
+  { id:"ben2", form:"BEN-2", title:"Significant Beneficial Ownership", cat:"Statutory Return", section:"Sec 90", freq:"Event", applies:(c)=>c.companyType!=="LLP", tags:["Non-LLP"] },
+  { id:"chg1", form:"CHG-1/CHG-4", title:"Registration / Satisfaction of Charge", cat:"Charges", section:"Sec 77/82", freq:"Event", applies:(c)=>c.hasCharges, tags:["Cos with Charges"] },
+  { id:"llp8", form:"Form 8 (LLP)", title:"Statement of Account & Solvency", cat:"Annual Filing", section:"LLP Act 2008", freq:"Annual", applies:(c)=>c.companyType==="LLP", tags:["LLP Only"] },
+  { id:"llp11", form:"Form 11 (LLP)", title:"Annual Return (LLP)", cat:"Annual Filing", section:"LLP Act 2008", freq:"Annual", applies:(c)=>c.companyType==="LLP", tags:["LLP Only"] },
 ];
 
 const CAT_COL = {
-  "Annual Filing":       { bg:"#1d4ed822", bd:"#3b82f633", txt:"#93c5fd" },
-  "Statutory Return":    { bg:"#c2410c22", bd:"#f9731633", txt:"#fdba74" },
-  "Director":            { bg:"#7c3aed22", bd:"#8b5cf633", txt:"#c4b5fd" },
-  "Share Capital":       { bg:"#b4530922", bd:"#f59e0b33", txt:"#fcd34d" },
-  "Registered Office":   { bg:"#065f4622", bd:"#10b98133", txt:"#6ee7b7" },
-  "CSR":                 { bg:"#9d174d22", bd:"#ec489933", txt:"#f9a8d4" },
+  "Annual Filing": { bg:"#1d4ed822", bd:"#3b82f633", txt:"#93c5fd" },
+  "Statutory Return": { bg:"#c2410c22", bd:"#f9731633", txt:"#fdba74" },
+  "Director": { bg:"#7c3aed22", bd:"#8b5cf633", txt:"#c4b5fd" },
+  "Share Capital": { bg:"#b4530922", bd:"#f59e0b33", txt:"#fcd34d" },
+  "Registered Office": { bg:"#065f4622", bd:"#10b98133", txt:"#6ee7b7" },
+  "CSR": { bg:"#9d174d22", bd:"#ec489933", txt:"#f9a8d4" },
   "Investor Protection": { bg:"#0e749022", bd:"#06b6d433", txt:"#67e8f9" },
-  "Charges":             { bg:"#7f1d1d22", bd:"#ef444433", txt:"#fca5a5" },
+  "Charges": { bg:"#7f1d1d22", bd:"#ef444433", txt:"#fca5a5" },
 };
 
 const parseIndDate = (s) => { if (!s) return null; const [d,m,y]=s.split("/").map(Number); return new Date(y,m-1,d); };
@@ -43,12 +43,11 @@ const fmt = (d) => { if(!d) return "—"; return `${String(d.getDate()).padStart
 const daysLeft = (d) => d ? Math.ceil((d-TODAY)/86400000) : null;
 const urgency = (n) => {
   if (n===null) return {col:"#4a4a66",bg:"#1e1e3022",label:"—"};
-  if (n<0)  return {col:"#f87171",bg:"#7f1d1d22",label:`${Math.abs(n)}d overdue`};
+  if (n<0) return {col:"#f87171",bg:"#7f1d1d22",label:`${Math.abs(n)}d overdue`};
   if (n<=30) return {col:"#fb923c",bg:"#7c2d1222",label:`${n}d left`};
   if (n<=90) return {col:"#fbbf24",bg:"#78350f22",label:`${n}d left`};
   return {col:"#4ade80",bg:"#14532d22",label:`${n}d left`};
 };
-
 const calcDueDates = (rule, co) => {
   const agm = parseIndDate(co.lastAGM);
   const slots = [];
@@ -67,10 +66,8 @@ const calcDueDates = (rule, co) => {
   const past = slots.filter(s=>s.date&&s.date<TODAY);
   return {upcoming:upcoming[0]||null, past:past.at(-1)||null, all:slots};
 };
-
 const save = async (d) => { try { await window.storage.set(STORAGE_KEY, JSON.stringify(d)); } catch{} };
 const load = async () => { try { const r=await window.storage.get(STORAGE_KEY); return r?JSON.parse(r.value):null; } catch{ return null; } };
-
 const loadPdfJs = () => new Promise((res,rej) => {
   if (window.pdfjsLib) { res(window.pdfjsLib); return; }
   const s = document.createElement("script");
@@ -78,7 +75,6 @@ const loadPdfJs = () => new Promise((res,rej) => {
   s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); };
   s.onerror = rej; document.head.appendChild(s);
 });
-
 const extractPdfText = async (file) => {
   const lib = await loadPdfJs();
   const buf = await file.arrayBuffer();
@@ -91,28 +87,24 @@ const extractPdfText = async (file) => {
   }
   return txt;
 };
-
 const toC = (v) => v ? (v/10000000).toFixed(4) : "";
-
 const parseAOC4 = (txt, fileName) => {
-  const g = (rx) => { const m=txt.match(rx); return m?m[1].trim():""; };
   const cin = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
   const nm1 = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
   const srn = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
   const filingDate = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
   const agmDate = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
   const fyFrom = txt.match(/From\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
-  const fyTo   = txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
-  const nwAbs  = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
-  const toAbs  = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1] || txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
-  const scAbs  = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
-  const plAbs  = parseInt(txt.match(/Profit\s*\/?\s*\(Loss\).*?\(XI.*?XIV\).*?(-?\d+)/)?.[1]||"0")||0;
+  const fyTo = txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
+  const nwAbs = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
+  const toAbs = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1] || txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
+  const scAbs = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
+  const plAbs = parseInt(txt.match(/Profit\s*\/?\s*\(Loss\).*?\(XI.*?XIV\).*?(-?\d+)/)?.[1]||"0")||0;
   const auditor = (txt.match(/Name of the auditor.*?firm\s+([A-Z][A-Z\s&.]+)/i)?.[1]||"").replace(/\s+/g," ").trim();
   return { type:"aoc4", fileName, cin, companyName:nm1.replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom, fyTo,
     turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, shareCapital:scAbs, netLoss:plAbs, auditor,
     turnover:toC(toAbs), networth:toC(nwAbs), paidUpCapital:toC(scAbs) };
 };
-
 const parseMGT7 = (txt, fileName) => {
   const cin = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
   const nm1 = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
@@ -129,7 +121,6 @@ const parseMGT7 = (txt, fileName) => {
   return { type:"mgt7", fileName, cin, companyName:nm1.replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom,
     isSmallCompany, companyType, directors, turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, turnover:toC(toAbs), networth:toC(nwAbs) };
 };
-
 const parseMDS = (file) => new Promise((res,rej) => {
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -167,7 +158,7 @@ const parseMDS = (file) => new Promise((res,rej) => {
   reader.onerror=rej; reader.readAsArrayBuffer(file);
 });
 
-// ─── DEMO DATA (pre-loaded from uploaded PDFs) ──────────────────────────────
+// ─── DEMO DATA ──────────────────────────────────────────────────────────────
 const DEMO_DB = {
   companies: {
     "U80900GJ2020PTC117714": {
@@ -202,34 +193,69 @@ const DEMO_DB = {
   }
 };
 
-// ─── CSS ───────────────────────────────────────────────────────────────────
+// ─── CSS with Full Dark/Light Theme System ──────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Sora:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --bg-main: #07070f;
+  --bg-nav: #08081a;
+  --bg-card: #0b0b18;
+  --bg-hover: #0d0d1c;
+  --border: #181828;
+  --text: #e8e6ff;
+  --text-muted: #7a7a99;
+  --text-dim: #3a3a55;
+  --text-light: #2a2a42;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --success: #4ade80;
+  --warning: #fb923c;
+  --danger: #f87171;
+}
+
+[data-theme="light"] {
+  --bg-main: #f8fafc;
+  --bg-nav: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #64748b;
+  --text-light: #94a3b8;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+}
+
 *{box-sizing:border-box;margin:0;padding:0}
-::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:#08080f}::-webkit-scrollbar-thumb{background:#202035;border-radius:3px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:var(--bg-hover)}::-webkit-scrollbar-thumb{background:#64748b;border-radius:3px}
 input,select,textarea{outline:none;font-family:'Sora',sans-serif}
-input::placeholder,textarea::placeholder{color:#252540}
+input::placeholder,textarea::placeholder{color:var(--text-dim)}
 .mono{font-family:'IBM Plex Mono',monospace}
 @keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes sp{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .up{animation:up .22s ease forwards}
-.spin{animation:sp .7s linear infinite;border:2px solid #202035;border-top-color:#6366f1;border-radius:50%;width:18px;height:18px;display:inline-block;flex-shrink:0}
+.spin{animation:sp .7s linear infinite;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;width:18px;height:18px;display:inline-block;flex-shrink:0}
 .pls{animation:pulse 2s ease infinite}
-.card{background:#0b0b18;border:1px solid #181828;border-radius:12px;transition:.15s}
-.card:hover{border-color:#242440}
-.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:7px;border:1px solid #181828;background:transparent;color:#7a7a99;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:.13s;white-space:nowrap}
-.btn:hover{border-color:#6366f1;color:#a5b4fc}
-.btn.pri{background:linear-gradient(135deg,#6366f1,#4f46e5);border-color:transparent;color:#fff;box-shadow:0 2px 10px #6366f128}
-.btn.pri:hover{box-shadow:0 4px 18px #6366f140;transform:translateY(-1px)}
-.btn.red{border-color:#7f1d1d44;color:#f87171}.btn.red:hover{background:#7f1d1d18}
-.inp{background:#0b0b18;border:1px solid #181828;border-radius:7px;padding:7px 11px;color:#e8e6ff;font-size:11px;transition:.13s;width:100%}
-.inp:focus{border-color:#6366f150}
-.bg{display:inline-flex;align-items:center;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700}
-.tab{padding:8px 16px;border-bottom:2px solid transparent;font-size:11px;font-weight:600;cursor:pointer;color:#3a3a55;transition:.13s;white-space:nowrap;background:transparent;border-left:none;border-right:none;border-top:none;font-family:inherit}
-.tab.on{color:#a5b4fc;border-bottom-color:#6366f1}
-.tab:hover:not(.on){color:#7a7a99}
-.row{transition:.12s}.row:hover{background:#0d0d1c}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;transition:.15s}
+.card:hover{border-color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:.13s;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.pri{background:linear-gradient(135deg,var(--accent),var(--accent-hover));border-color:transparent;color:#fff;box-shadow:0 2px 10px var(--accent)28}
+.btn.pri:hover{box-shadow:0 4px 18px var(--accent)40;transform:translateY(-1px)}
+.btn.red{border-color:var(--danger)44;color:var(--danger)}.btn.red:hover{background:var(--danger)18}
+.inp{background:var(--bg-card);border:1px solid var(--border);border-radius:7px;padding:7px 11px;color:var(--text);font-size:11px;transition:.13s;width:100%}
+.inp:focus{border-color:var(--accent)50}
+.bg{display:inline-flex;align-items:center;padding:2px 7px;border-radius:5px;font-size:10;font-weight:700}
+.tab{padding:8px 16px;border-bottom:2px solid transparent;font-size:11;font-weight:600;cursor:pointer;color:var(--text-dim);transition:.13s;white-space:nowrap;background:transparent;border-left:none;border-right:none;border-top:none;font-family:inherit}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.on){color:var(--text-muted)}
+.row{transition:.12s}.row:hover{background:var(--bg-hover)}
 `;
 
 // ─── EDIT STATUS FORM ──────────────────────────────────────────────────────
@@ -241,25 +267,25 @@ function EditForm({rule,init,onSave,onCancel}) {
   return (
     <div>
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:9,fontWeight:700,color:"#3a3a55",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:5}}>Status</label>
+        <label style={{fontSize:9,fontWeight:700,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:5}}>Status</label>
         <div style={{display:"flex",gap:5}}>
           {[["pending","⏳ Pending"],["filed","✅ Filed"],["na","— N/A"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setStatus(v)} style={{flex:1,padding:"7px 0",borderRadius:6,border:`1px solid ${status===v?"#6366f1":"#181828"}`,background:status===v?"#6366f118":"transparent",color:status===v?"#a5b4fc":"#3a3a55",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>{l}</button>
+            <button key={v} onClick={()=>setStatus(v)} style={{flex:1,padding:"7px 0",borderRadius:6,border:`1px solid ${status===v?"var(--accent)":"var(--border)"}`,background:status===v?"var(--accent)18":"transparent",color:status===v?"var(--accent)":"var(--text-dim)",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>{l}</button>
           ))}
         </div>
       </div>
       {status==="filed"&&<>
         <div style={{marginBottom:9}}>
-          <label style={{fontSize:9,fontWeight:700,color:"#3a3a55",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>SRN</label>
+          <label style={{fontSize:9,fontWeight:700,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>SRN</label>
           <input className="inp" placeholder="e.g. AB1234567" value={srn} onChange={e=>setSrn(e.target.value)}/>
         </div>
         <div style={{marginBottom:9}}>
-          <label style={{fontSize:9,fontWeight:700,color:"#3a3a55",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>Date Filed (DD/MM/YYYY)</label>
+          <label style={{fontSize:9,fontWeight:700,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>Date Filed (DD/MM/YYYY)</label>
           <input className="inp" placeholder="04/12/2025" value={fd} onChange={e=>setFd(e.target.value)}/>
         </div>
       </>}
       <div style={{marginBottom:13}}>
-        <label style={{fontSize:9,fontWeight:700,color:"#3a3a55",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>Notes</label>
+        <label style={{fontSize:9,fontWeight:700,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>Notes</label>
         <textarea className="inp" rows={2} placeholder="Any notes…" value={notes} onChange={e=>setNotes(e.target.value)} style={{resize:"none"}}/>
       </div>
       <div style={{display:"flex",gap:7,justifyContent:"flex-end"}}>
@@ -275,41 +301,41 @@ function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
   const mdsRef=useRef(); const pdfRef=useRef();
   return (
     <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&!loading&&onClose()}>
-      <div style={{background:"#09091a",border:"1px solid #181828",borderRadius:16,padding:"22px",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto"}} className="up">
+      <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:16,padding:"22px",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto"}} className="up">
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div><div style={{fontSize:15,fontWeight:700}}>Upload Company Data</div><div style={{fontSize:10,color:"#3a3a55",marginTop:2}}>MDS Excel · AOC-4 PDF · MGT-7/7A PDF</div></div>
+          <div><div style={{fontSize:15,fontWeight:700,color:"var(--text)"}}>Upload Company Data</div><div style={{fontSize:10,color:"var(--text-dim)",marginTop:2}}>MDS Excel · AOC-4 PDF · MGT-7/7A PDF</div></div>
           {!loading&&<button className="btn" onClick={onClose}>✕</button>}
         </div>
-        <div style={{display:"flex",gap:4,marginBottom:16,background:"#06060f",borderRadius:8,padding:3}}>
+        <div style={{display:"flex",gap:4,marginBottom:16,background:"var(--bg-hover)",borderRadius:8,padding:3}}>
           {[["mds","📊 MDS Excel"],["aoc4","📋 AOC-4"],["mgt7","📋 MGT-7/7A"]].map(([k,l])=>(
-            <button key={k} onClick={()=>!loading&&setMode(k)} style={{flex:1,padding:"7px 0",borderRadius:6,border:"none",background:mode===k?"linear-gradient(135deg,#6366f1,#4f46e5)":"transparent",color:mode===k?"#fff":"#3a3a55",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>{l}</button>
+            <button key={k} onClick={()=>!loading&&setMode(k)} style={{flex:1,padding:"7px 0",borderRadius:6,border:"none",background:mode===k?"linear-gradient(135deg,var(--accent),var(--accent-hover))":"transparent",color:mode===k?"#fff":"var(--text-dim)",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>{l}</button>
           ))}
         </div>
         {mode==="mds"&&(
           <div>
-            <p style={{fontSize:11,color:"#6a6a8a",lineHeight:1.7,marginBottom:12}}>Upload the <strong style={{color:"#aac"}}>Master Data Sheet (MDS)</strong> Excel from the MCA portal. MasterData, Director Details, and IndexOfCharges sheets are parsed automatically.</p>
+            <p style={{fontSize:11,color:"var(--text-muted)",lineHeight:1.7,marginBottom:12}}>Upload the <strong style={{color:"var(--accent)"}}>Master Data Sheet (MDS)</strong> Excel from the MCA portal. MasterData, Director Details, and IndexOfCharges sheets are parsed automatically.</p>
             <input ref={mdsRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>onMds(e.target.files[0])}/>
             <DropZone icon="📊" label="Drop MDS Excel here or click" sub=".xlsx / .xls" loading={loading} loadingText="Parsing MDS…" onClick={()=>!loading&&mdsRef.current?.click()}/>
           </div>
         )}
         {(mode==="aoc4"||mode==="mgt7")&&(
           <div>
-            <p style={{fontSize:11,color:"#6a6a8a",lineHeight:1.7,marginBottom:10}}>
-              Upload the <strong style={{color:"#aac"}}>{mode==="aoc4"?"AOC-4":"MGT-7 / MGT-7A"}</strong> PDF downloaded from MCA portal. Data is automatically extracted and merged with existing company records.
-              <br/><span style={{color:"#fbbf24",fontSize:10}}>⚠ Requires text-based MCA eForms PDF (not scanned images)</span>
+            <p style={{fontSize:11,color:"var(--text-muted)",lineHeight:1.7,marginBottom:10}}>
+              Upload the <strong style={{color:"var(--accent)"}}>{mode==="aoc4"?"AOC-4":"MGT-7 / MGT-7A"}</strong> PDF downloaded from MCA portal. Data is automatically extracted and merged with existing company records.
+              <br/><span style={{color:"var(--warning)",fontSize:10}}>⚠ Requires text-based MCA eForms PDF (not scanned images)</span>
             </p>
             <input ref={pdfRef} type="file" accept=".pdf" style={{display:"none"}} onChange={e=>onPdf(e.target.files[0],mode)}/>
             <DropZone icon="📋" label={`Drop ${mode==="aoc4"?"AOC-4":"MGT-7"} PDF here or click`} sub=".pdf only" loading={loading} loadingText="Extracting from PDF…" onClick={()=>!loading&&pdfRef.current?.click()}/>
-            <div style={{background:"#0b0b18",border:"1px solid #181828",borderRadius:8,padding:"10px 13px",marginTop:10}}>
-              <div style={{fontSize:9,fontWeight:700,color:mode==="aoc4"?"#93c5fd":"#c4b5fd",textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Extracts from {mode==="aoc4"?"AOC-4":"MGT-7/7A"}</div>
+            <div style={{background:"var(--bg-hover)",border:"1px solid var(--border)",borderRadius:8,padding:"10px 13px",marginTop:10}}>
+              <div style={{fontSize:9,fontWeight:700,color:"var(--accent)",textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>Extracts from {mode==="aoc4"?"AOC-4":"MGT-7/7A"}</div>
               {(mode==="aoc4"
                 ?["CIN & Company Name","Financial Year (From/To)","Turnover (Services/Goods)","Net Worth","Share Capital","AGM Date","Auditor Firm","SRN & Filing Date"]
                 :["CIN & Company Name","Class (Private/Public/OPC)","Small Company Flag","AGM Date","Directors (DIN + Name)","Turnover & Net Worth","SRN & Filing Date"]
-              ).map(f=><div key={f} style={{fontSize:10,color:"#4a4a66",marginBottom:2}}>✓ {f}</div>)}
+              ).map(f=><div key={f} style={{fontSize:10,color:"var(--text-dim)",marginBottom:2}}>✓ {f}</div>)}
             </div>
           </div>
         )}
-        {err&&<div style={{background:"#7f1d1d18",border:"1px solid #7f1d1d44",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#fca5a5",marginTop:10}}>⚠ {err}</div>}
+        {err&&<div style={{background:"var(--danger)18",border:"1px solid var(--danger)44",borderRadius:7,padding:"8px 12px",fontSize:11,color:"var(--danger)",marginTop:10}}>⚠ {err}</div>}
       </div>
     </div>
   );
@@ -319,16 +345,17 @@ function DropZone({icon,label,sub,loading,loadingText,onClick}) {
   const [drag,setDrag]=useState(false);
   return (
     <div onDrop={e=>{e.preventDefault();setDrag(false);}} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onClick={onClick}
-      style={{border:`2px dashed ${drag?"#6366f1":"#181828"}`,borderRadius:10,padding:"30px 20px",textAlign:"center",cursor:"pointer",background:drag?"#6366f108":"#0b0b18",transition:".16s"}}>
+      style={{border:`2px dashed ${drag?"var(--accent)":"var(--border)"}`,borderRadius:10,padding:"30px 20px",textAlign:"center",cursor:"pointer",background:drag?"var(--accent)08":"var(--bg-card)",transition:".16s"}}>
       {loading
-        ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"#3a3a55"}}>{loadingText}</div></div>
-        :<><div style={{fontSize:30,marginBottom:8}}>{icon}</div><div style={{fontWeight:700,fontSize:12}}>{label}</div><div style={{fontSize:10,color:"#3a3a55",marginTop:3}}>{sub}</div></>}
+        ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"var(--text-dim)"}}>{loadingText}</div></div>
+        :<><div style={{fontSize:30,marginBottom:8}}>{icon}</div><div style={{fontWeight:700,fontSize:12,color:"var(--text)"}}>{label}</div><div style={{fontSize:10,color:"var(--text-dim)",marginTop:3}}>{sub}</div></>}
     </div>
   );
 }
 
 // ─── MAIN APP ──────────────────────────────────────────────────────────────
-export default function App() {
+export default function RocSphere() {
+  const [theme, setTheme] = useState("dark");
   const [db,setDb]=useState(null);
   const [screen,setScreen]=useState("dash");
   const [selCin,setSelCin]=useState(null);
@@ -346,12 +373,26 @@ export default function App() {
 
   useEffect(()=>{
     (async()=>{
+      const savedTheme = localStorage.getItem("rocsphere-theme") || "dark";
+      setTheme(savedTheme);
+      document.documentElement.setAttribute("data-theme", savedTheme);
+
       const saved=await load();
       if (saved&&Object.keys(saved.companies||{}).length>0) setDb(saved);
       else { setDb(DEMO_DB); await save(DEMO_DB); }
       setDataLoading(false);
     })();
   },[]);
+
+  useEffect(() => {
+    localStorage.setItem("rocsphere-theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    const newTheme = theme === "dark" ? "light" : "dark";
+    setTheme(newTheme);
+  };
 
   const persist=useCallback(async(nd)=>{setDb(nd);await save(nd);},[]);
   const companies=useMemo(()=>db?Object.values(db.companies):[],[db]);
@@ -361,7 +402,6 @@ export default function App() {
     const st=company?.filingStatus?.[r.id]?.status||"pending";
     return (filterCat==="All"||r.cat===filterCat)&&(filterSt==="All"||filterSt===st)&&(!search||r.title.toLowerCase().includes(search.toLowerCase())||r.form.toLowerCase().includes(search.toLowerCase()));
   }),[applicable,filterCat,filterSt,search,company]);
-
   const globalUpcoming=useMemo(()=>{
     const items=[];
     for (const co of companies) {
@@ -376,7 +416,6 @@ export default function App() {
     }
     return items.sort((a,b)=>a.n-b.n);
   },[companies]);
-
   const coStats=useMemo(()=>{
     const s={};
     for (const co of companies) {
@@ -453,72 +492,69 @@ export default function App() {
   };
 
   if(dataLoading) return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#07070f",gap:10,fontFamily:"Sora,sans-serif"}}>
-      <div className="spin"/><span style={{color:"#3a3a55",fontSize:12}}>Loading…</span>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"var(--bg-main)",gap:10,fontFamily:"Sora,sans-serif"}}>
+      <div className="spin"/><span style={{color:"var(--text-dim)",fontSize:12}}>Loading rocSphere…</span>
     </div>
   );
 
   return (
-    <div style={{fontFamily:"'Sora',sans-serif",minHeight:"100vh",background:"#07070f",color:"#e8e6ff"}}>
+    <div style={{fontFamily:"'Sora',sans-serif",minHeight:"100vh",background:"var(--bg-main)",color:"var(--text)"}} data-theme={theme}>
       <style>{CSS}</style>
 
       {/* NAV */}
-      <div style={{background:"#08081a",borderBottom:"1px solid #101025",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,backdropFilter:"blur(10px)"}}>
+      <div style={{background:"var(--bg-nav)",borderBottom:"1px solid var(--border)",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,backdropFilter:"blur(10px)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#6366f1,#4f46e5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,boxShadow:"0 0 14px #6366f128",cursor:"pointer"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>⚖️</div>
+          <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,var(--accent),var(--accent-hover))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,boxShadow:"0 0 14px var(--accent)28",cursor:"pointer"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>🔮</div>
           <div>
-            <div style={{fontWeight:700,fontSize:13,letterSpacing:"-.2px"}}>ROC Compliance Tracker</div>
-            <div style={{fontSize:9,color:"#2a2a42",fontWeight:500,textTransform:"uppercase",letterSpacing:".5px"}}>Companies Act 2013 · MCA</div>
+            <div style={{fontWeight:700,fontSize:13,letterSpacing:"-.2px"}}>rocSphere</div>
+            <div style={{fontSize:9,color:"var(--text-dim)",fontWeight:500,textTransform:"uppercase",letterSpacing:".5px"}}>ROC Compliance Sphere · MCA</div>
           </div>
           {screen==="company"&&company&&(
-            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:10,paddingLeft:10,borderLeft:"1px solid #131325"}}>
-              <span style={{fontSize:10,color:"#3a3a55",cursor:"pointer"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>Dashboard</span>
-              <span style={{fontSize:10,color:"#1f1f35"}}>›</span>
-              <span style={{fontSize:11,color:"#7a7a99",fontWeight:600,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{company.companyName}</span>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginLeft:10,paddingLeft:10,borderLeft:"1px solid var(--border)"}}>
+              <span style={{fontSize:10,color:"var(--text-dim)",cursor:"pointer"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>Dashboard</span>
+              <span style={{fontSize:10,color:"var(--text-light)"}}>›</span>
+              <span style={{fontSize:11,color:"var(--text-muted)",fontWeight:600,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{company.companyName}</span>
             </div>
           )}
         </div>
         <div style={{display:"flex",gap:7,alignItems:"center"}}>
           {globalUpcoming.length>0&&(
-            <div style={{display:"flex",alignItems:"center",gap:5,background:"#fb923c14",border:"1px solid #fb923c28",borderRadius:6,padding:"4px 9px",cursor:"pointer"}} onClick={()=>setScreen("dash")}>
-              <span className="pls" style={{color:"#fb923c",fontSize:12,lineHeight:1}}>●</span>
-              <span style={{fontSize:10,fontWeight:700,color:"#fb923c"}}>{globalUpcoming.length} due in 90d</span>
+            <div style={{display:"flex",alignItems:"center",gap:5,background:"var(--warning)14",border:"1px solid var(--warning)28",borderRadius:6,padding:"4px 9px",cursor:"pointer"}} onClick={()=>setScreen("dash")}>
+              <span className="pls" style={{color:"var(--warning)",fontSize:12,lineHeight:1}}>●</span>
+              <span style={{fontSize:10,fontWeight:700,color:"var(--warning)"}}>{globalUpcoming.length} due in 90d</span>
             </div>
           )}
+          <button className="btn" onClick={toggleTheme} style={{padding:"6px 10px",fontSize:19}}>{theme==="dark"?"☀️":"🌙"}</button>
           <button className="btn pri" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>+ Add / Update Company</button>
         </div>
       </div>
 
       <div style={{maxWidth:1140,margin:"0 auto",padding:"22px 16px"}}>
-
-        {/* ── DASHBOARD ── */}
+        {/* DASHBOARD */}
         {screen==="dash"&&(
           <div className="up">
-            {/* Stats */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,marginBottom:20}}>
               {[
-                ["Companies",companies.length,  "#a5b4fc","#1d4ed828"],
-                ["Total Applicable",companies.reduce((a,c)=>a+(COMPLIANCE_RULES.filter(r=>r.applies(c)).length),0),"#6ee7b7","#065f4628"],
-                ["⚠ Overdue",   companies.reduce((a,c)=>a+(coStats[c.cin]?.overdue||0),0),"#f87171","#7f1d1d28"],
-                ["📅 Due ≤30d", globalUpcoming.filter(x=>x.n<=30).length,"#fb923c","#7c2d1228"],
+                ["Companies",companies.length, "var(--accent)","var(--accent)28"],
+                ["Total Applicable",companies.reduce((a,c)=>a+(COMPLIANCE_RULES.filter(r=>r.applies(c)).length),0),"var(--success)","var(--success)28"],
+                ["⚠ Overdue", companies.reduce((a,c)=>a+(coStats[c.cin]?.overdue||0),0),"var(--danger)","var(--danger)28"],
+                ["📅 Due ≤30d", globalUpcoming.filter(x=>x.n<=30).length,"var(--warning)","var(--warning)28"],
               ].map(([l,v,col,bg])=>(
-                <div key={l} className="card" style={{padding:"13px 15px",borderLeft:`3px solid ${col}44`}}>
+                <div key={l} className="card" style={{padding:"13px 15px",borderLeft:`3px solid ${col}`}}>
                   <div style={{fontSize:22,fontWeight:800,color:col,fontFamily:"IBM Plex Mono,monospace"}}>{v}</div>
-                  <div style={{fontSize:9,color:"#3a3a55",marginTop:2,fontWeight:600,textTransform:"uppercase",letterSpacing:".4px"}}>{l}</div>
+                  <div style={{fontSize:9,color:"var(--text-dim)",marginTop:2,fontWeight:600,textTransform:"uppercase",letterSpacing:".4px"}}>{l}</div>
                 </div>
               ))}
             </div>
-
             <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:14,alignItems:"start"}}>
-              {/* Companies list */}
               <div>
-                <div style={{fontSize:11,fontWeight:700,color:"#6a6a8a",marginBottom:10,letterSpacing:".3px"}}>COMPANIES ({companies.length})</div>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--text-dim)",marginBottom:10,letterSpacing:".3px"}}>COMPANIES ({companies.length})</div>
                 <div style={{display:"flex",flexDirection:"column",gap:9}}>
                   {companies.length===0?(
                     <div className="card" style={{padding:"36px 20px",textAlign:"center"}}>
                       <div style={{fontSize:26,marginBottom:8}}>📂</div>
-                      <div style={{fontSize:12,fontWeight:600,color:"#4a4a66",marginBottom:4}}>No companies yet</div>
-                      <div style={{fontSize:10,color:"#2a2a40",marginBottom:14}}>Upload an MDS Excel or AOC-4/MGT-7 PDF to get started</div>
+                      <div style={{fontSize:12,fontWeight:600,color:"var(--text-dim)",marginBottom:4}}>No companies yet</div>
+                      <div style={{fontSize:10,color:"var(--text-light)",marginBottom:14}}>Upload an MDS Excel or AOC-4/MGT-7 PDF to get started</div>
                       <button className="btn pri" onClick={()=>setShowUpload(true)}>+ Add Company</button>
                     </div>
                   ):companies.map(co=>{
@@ -529,72 +565,69 @@ export default function App() {
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:12,fontWeight:700,marginBottom:4,lineHeight:1.3}}>{co.companyName}</div>
                             <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-                              <span className="mono bg" style={{background:"#10102a",color:"#6366f1",fontSize:9}}>{co.cin}</span>
-                              <span className="bg" style={{background:"#13132a",color:"#7a7a99"}}>{co.companyType}</span>
+                              <span className="mono bg" style={{background:"var(--bg-hover)",color:"var(--accent)",fontSize:9}}>{co.cin}</span>
+                              <span className="bg" style={{background:"var(--bg-hover)",color:"var(--text-muted)"}}>{co.companyType}</span>
                               {co.isSmallCompany==="Yes"&&<span className="bg" style={{background:"#1e3a5f18",color:"#7dd3fc",border:"1px solid #1e3a5f33"}}>Small Co.</span>}
-                              {co.companyStatus&&<span className="bg" style={{background:"#14532d18",color:"#4ade80"}}>{co.companyStatus}</span>}
+                              {co.companyStatus&&<span className="bg" style={{background:"var(--success)18",color:"var(--success)"}}>{co.companyStatus}</span>}
                             </div>
                           </div>
                           <div style={{display:"flex",gap:6,flexShrink:0}}>
-                            {st.overdue>0&&<div style={{textAlign:"center",background:"#7f1d1d18",border:"1px solid #7f1d1d33",borderRadius:7,padding:"5px 10px"}}><div style={{fontSize:15,fontWeight:800,color:"#f87171",fontFamily:"IBM Plex Mono,monospace"}}>{st.overdue}</div><div style={{fontSize:8,color:"#f87171",fontWeight:700}}>OVERD</div></div>}
-                            {st.up30>0&&<div style={{textAlign:"center",background:"#7c2d1218",border:"1px solid #fb923c28",borderRadius:7,padding:"5px 10px"}}><div style={{fontSize:15,fontWeight:800,color:"#fb923c",fontFamily:"IBM Plex Mono,monospace"}}>{st.up30}</div><div style={{fontSize:8,color:"#fb923c",fontWeight:700}}>30D</div></div>}
-                            <div style={{textAlign:"center",background:"#1d4ed818",border:"1px solid #3b82f628",borderRadius:7,padding:"5px 10px"}}><div style={{fontSize:15,fontWeight:800,color:"#93c5fd",fontFamily:"IBM Plex Mono,monospace"}}>{st.total}</div><div style={{fontSize:8,color:"#93c5fd",fontWeight:700}}>TOTAL</div></div>
+                            {st.overdue>0&&<div style={{textAlign:"center",background:"var(--danger)18",border:"1px solid var(--danger)33",borderRadius:7,padding:"5px 10px"}}><div style={{fontSize:15,fontWeight:800,color:"var(--danger)",fontFamily:"IBM Plex Mono,monospace"}}>{st.overdue}</div><div style={{fontSize:8,color:"var(--danger)",fontWeight:700}}>OVERD</div></div>}
+                            {st.up30>0&&<div style={{textAlign:"center",background:"var(--warning)18",border:"1px solid var(--warning)28",borderRadius:7,padding:"5px 10px"}}><div style={{fontSize:15,fontWeight:800,color:"var(--warning)",fontFamily:"IBM Plex Mono,monospace"}}>{st.up30}</div><div style={{fontSize:8,color:"var(--warning)",fontWeight:700}}>30D</div></div>}
+                            <div style={{textAlign:"center",background:"var(--accent)18",border:"1px solid var(--accent)28",borderRadius:7,padding:"5px 10px"}}><div style={{fontSize:15,fontWeight:800,color:"var(--accent)",fontFamily:"IBM Plex Mono,monospace"}}>{st.total}</div><div style={{fontSize:8,color:"var(--accent)",fontWeight:700}}>TOTAL</div></div>
                           </div>
                         </div>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:9,paddingTop:8,borderTop:"1px solid #0f0f1e",fontSize:9,color:"#2a2a40"}}>
-                          <span>AGM: <span style={{color:"#5a5a7a"}}>{co.lastAGM||"—"}</span> · Docs: <span style={{color:"#5a5a7a"}}>{(co.documents||[]).length}</span></span>
-                          <span>Filed: <span style={{color:"#4ade80"}}>{st.filed||0}</span>/{st.total}</span>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:9,paddingTop:8,borderTop:"1px solid var(--border)",fontSize:9,color:"var(--text-light)"}}>
+                          <span>AGM: <span style={{color:"var(--text-muted)"}}>{co.lastAGM||"—"}</span> · Docs: <span style={{color:"var(--text-muted)"}}>{(co.documents||[]).length}</span></span>
+                          <span>Filed: <span style={{color:"var(--success)"}}>{st.filed||0}</span>/{st.total}</span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-
-              {/* Upcoming panel */}
               <div>
-                <div style={{fontSize:11,fontWeight:700,color:"#6a6a8a",marginBottom:10,letterSpacing:".3px"}}>UPCOMING (90 DAYS)</div>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--text-dim)",marginBottom:10,letterSpacing:".3px"}}>UPCOMING (90 DAYS)</div>
                 <div className="card" style={{overflow:"hidden"}}>
                   {globalUpcoming.length===0?(
-                    <div style={{padding:"26px 14px",textAlign:"center",color:"#2a2a40",fontSize:11}}>✅ No pending deadlines in 90 days</div>
+                    <div style={{padding:"26px 14px",textAlign:"center",color:"var(--text-light)",fontSize:11}}>✅ No pending deadlines in 90 days</div>
                   ):globalUpcoming.slice(0,12).map((item,i)=>{
                     const u=urgency(item.n);
                     return (
-                      <div key={i} className="row" style={{padding:"9px 13px",borderBottom:i<Math.min(globalUpcoming.length,12)-1?"1px solid #0d0d1c":"none",cursor:"pointer"}} onClick={()=>{setSelCin(item.cin);setScreen("company");setTab("compliances");}}>
+                      <div key={i} className="row" style={{padding:"9px 13px",borderBottom:i<Math.min(globalUpcoming.length,12)-1?"1px solid var(--border)":"none",cursor:"pointer"}} onClick={()=>{setSelCin(item.cin);setScreen("company");setTab("compliances");}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
                           <div style={{minWidth:0,flex:1}}>
-                            <div style={{fontSize:10,fontWeight:700,color:"#93c5fd",marginBottom:1}}>{item.rule.form}</div>
-                            <div style={{fontSize:9,color:"#5a5a7a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name.length>26?item.name.slice(0,26)+"…":item.name}</div>
+                            <div style={{fontSize:10,fontWeight:700,color:"var(--accent)",marginBottom:1}}>{item.rule.form}</div>
+                            <div style={{fontSize:9,color:"var(--text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name.length>26?item.name.slice(0,26)+"…":item.name}</div>
                           </div>
                           <div style={{textAlign:"right",flexShrink:0}}>
                             <div style={{fontSize:10,fontWeight:700,color:u.col,background:u.bg,padding:"2px 6px",borderRadius:4}}>{u.label}</div>
-                            <div style={{fontSize:9,color:"#3a3a55",marginTop:2}}>{fmt(item.date)}</div>
+                            <div style={{fontSize:9,color:"var(--text-dim)",marginTop:2}}>{fmt(item.date)}</div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
-                  {globalUpcoming.length>12&&<div style={{padding:"7px 13px",textAlign:"center",fontSize:9,color:"#3a3a55",borderTop:"1px solid #0d0d1c"}}>+{globalUpcoming.length-12} more</div>}
+                  {globalUpcoming.length>12&&<div style={{padding:"7px 13px",textAlign:"center",fontSize:9,color:"var(--text-dim)",borderTop:"1px solid var(--border)"}}>+{globalUpcoming.length-12} more</div>}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── COMPANY DETAIL ── */}
+        {/* COMPANY DETAIL */}
         {screen==="company"&&company&&(
           <div className="up">
-            {/* Header */}
             <div className="card" style={{padding:"15px 18px",marginBottom:14,display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:8}}>
               <div>
-                <div style={{fontSize:9,fontWeight:700,color:"#6366f1",letterSpacing:".6px",textTransform:"uppercase",marginBottom:4}}>Company</div>
+                <div style={{fontSize:9,fontWeight:700,color:"var(--accent)",letterSpacing:".6px",textTransform:"uppercase",marginBottom:4}}>Company</div>
                 <div style={{fontSize:16,fontWeight:700,letterSpacing:"-.2px"}}>{company.companyName}</div>
-                <div style={{fontSize:10,color:"#2a2a42",marginTop:2,fontFamily:"IBM Plex Mono,monospace"}}>{company.cin}</div>
+                <div style={{fontSize:10,color:"var(--text-light)",marginTop:2,fontFamily:"IBM Plex Mono,monospace"}}>{company.cin}</div>
               </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                {company.companyStatus&&<span className="bg" style={{background:"#14532d18",color:"#4ade80",border:"1px solid #14532d33"}}>{company.companyStatus}</span>}
+                {company.companyStatus&&<span className="bg" style={{background:"var(--success)18",color:"var(--success)",border:"1px solid var(--success)33"}}>{company.companyStatus}</span>}
                 {company.isSmallCompany==="Yes"&&<span className="bg" style={{background:"#1e3a5f18",color:"#7dd3fc",border:"1px solid #1e3a5f33"}}>Small Co.</span>}
-                <span className="bg" style={{background:"#13132a",color:"#7a7a99"}}>{company.companyType}</span>
+                <span className="bg" style={{background:"var(--bg-hover)",color:"var(--text-muted)"}}>{company.companyType}</span>
                 <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>↑ Update MDS</button>
                 <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("aoc4");setUploadErr("");}}>+ AOC-4</button>
                 <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mgt7");setUploadErr("");}}>+ MGT-7</button>
@@ -602,20 +635,18 @@ export default function App() {
               </div>
             </div>
 
-            {/* Info chips */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:7,marginBottom:14}}>
               {[["Incorporation",company.incorporationDate||"—"],["Last AGM",company.lastAGM||"—"],["Balance Sheet",company.balanceSheetDate||"—"],["ROC",company.rocName||"—"],["Paid-up Capital",company.paidUpCapital?`₹${(+company.paidUpCapital).toFixed(2)} Cr`:"—"],["Net Worth",company.networth?`₹${(+company.networth*10000000).toLocaleString("en-IN")}`:company.networth==="0.0000"?"₹0":"—"]].map(([l,v])=>(
-                <div key={l} style={{background:"#0b0b18",border:"1px solid #181828",borderRadius:7,padding:"8px 11px"}}>
-                  <div style={{fontSize:8,color:"#2a2a42",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:3}}>{l}</div>
-                  <div style={{fontSize:11,fontWeight:600,color:"#9999bb"}}>{v}</div>
+                <div key={l} style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:7,padding:"8px 11px"}}>
+                  <div style={{fontSize:8,color:"var(--text-light)",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:3}}>{l}</div>
+                  <div style={{fontSize:11,fontWeight:600,color:"var(--text-muted)"}}>{v}</div>
                 </div>
               ))}
             </div>
 
-            {/* Tabs */}
-            <div style={{display:"flex",borderBottom:"1px solid #101025",marginBottom:14,overflowX:"auto"}}>
+            <div style={{display:"flex",borderBottom:"1px solid var(--border)",marginBottom:14,overflowX:"auto"}}>
               {[["compliances","Compliances"],["directors","Directors"],["documents","Documents"],["financials","Financials"]].map(([k,l])=>(
-                <button key={k} className={`tab${tab===k?" on":""}`} onClick={()=>setTab(k)}>{l} {k==="compliances"&&<span style={{fontSize:9,marginLeft:3,color:tab===k?"#a5b4fc":"#2a2a42"}}>({applicable.length})</span>}</button>
+                <button key={k} className={`tab${tab===k?" on":""}`} onClick={()=>setTab(k)}>{l} {k==="compliances"&&<span style={{fontSize:9,marginLeft:3,color:tab===k?"var(--accent)":"var(--text-light)"}}>({applicable.length})</span>}</button>
               ))}
             </div>
 
@@ -634,7 +665,7 @@ export default function App() {
                     <option value="All">All Categories</option>
                     {[...new Set(applicable.map(r=>r.cat))].map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
-                  <div style={{marginLeft:"auto",fontSize:10,color:"#3a3a55"}}>
+                  <div style={{marginLeft:"auto",fontSize:10,color:"var(--text-dim)"}}>
                     {applicable.filter(r=>(company.filingStatus?.[r.id]?.status||"pending")==="filed").length}/{applicable.length} filed
                   </div>
                 </div>
@@ -648,8 +679,8 @@ export default function App() {
                     return (
                       <div key={rule.id} className="card" style={{padding:"13px 15px",position:"relative"}}>
                         <div style={{position:"absolute",top:11,right:11,display:"flex",gap:4}}>
-                          {st.status==="filed"&&<span className="bg" style={{background:"#14532d18",color:"#4ade80",border:"1px solid #14532d33"}}>✓ Filed</span>}
-                          {st.status==="na"&&<span className="bg" style={{background:"#13132a",color:"#5a5a7a"}}>N/A</span>}
+                          {st.status==="filed"&&<span className="bg" style={{background:"var(--success)18",color:"var(--success)",border:"1px solid var(--success)33"}}>✓ Filed</span>}
+                          {st.status==="na"&&<span className="bg" style={{background:"var(--bg-hover)",color:"var(--text-muted)"}}>N/A</span>}
                           {st.status==="pending"&&n!==null&&<span className="bg" style={{background:urg.bg,color:urg.col}}>{urg.label}</span>}
                         </div>
                         <div style={{paddingRight:90}}>
@@ -657,14 +688,14 @@ export default function App() {
                             <span style={{fontWeight:800,fontSize:11,color:col.txt,fontFamily:"IBM Plex Mono,monospace"}}>{rule.form}</span>
                             <span className="bg" style={{background:col.bg,color:col.txt,border:`1px solid ${col.bd}`,fontSize:9}}>{rule.cat}</span>
                           </div>
-                          <div style={{fontWeight:600,fontSize:11,marginBottom:7,color:"#ccccee",lineHeight:1.3}}>{rule.title}</div>
+                          <div style={{fontWeight:600,fontSize:11,marginBottom:7,color:"var(--text)",lineHeight:1.3}}>{rule.title}</div>
                         </div>
-                        <div style={{height:1,background:"#0d0d1c",marginBottom:7}}/>
+                        <div style={{height:1,background:"var(--border)",marginBottom:7}}/>
                         <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:10}}>
-                          {u&&<div style={{display:"flex",gap:5}}><span style={{color:"#2a2a42",minWidth:40,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px",paddingTop:1}}>Next</span><span style={{color:"#9999bb"}}>{fmt(u.date)} <span style={{color:"#3a3a55",fontSize:9}}>({u.label})</span></span></div>}
-                          {st.status==="filed"&&<div style={{display:"flex",gap:5}}><span style={{color:"#2a2a42",minWidth:40,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px"}}>Filed</span><span style={{color:"#4ade80"}}>{st.filedDate||"—"} {st.srn&&<span className="mono" style={{color:"#2a6a52",fontSize:9}}>{st.srn}</span>}</span></div>}
-                          {st.notes&&<div style={{fontSize:9,color:"#2a2a42",fontStyle:"italic",marginTop:1}}>"{st.notes}"</div>}
-                          <div style={{display:"flex",gap:5}}><span style={{color:"#2a2a42",minWidth:40,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px"}}>Law</span><span style={{color:"#2a2a42",fontSize:9}}>{rule.section}</span></div>
+                          {u&&<div style={{display:"flex",gap:5}}><span style={{color:"var(--text-light)",minWidth:40,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px",paddingTop:1}}>Next</span><span style={{color:"var(--text-muted)"}}>{fmt(u.date)} <span style={{color:"var(--text-dim)",fontSize:9}}>({u.label})</span></span></div>}
+                          {st.status==="filed"&&<div style={{display:"flex",gap:5}}><span style={{color:"var(--text-light)",minWidth:40,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px"}}>Filed</span><span style={{color:"var(--success)"}}>{st.filedDate||"—"} {st.srn&&<span className="mono" style={{color:"#2a6a52",fontSize:9}}>{st.srn}</span>}</span></div>}
+                          {st.notes&&<div style={{fontSize:9,color:"var(--text-light)",fontStyle:"italic",marginTop:1}}>"{st.notes}"</div>}
+                          <div style={{display:"flex",gap:5}}><span style={{color:"var(--text-light)",minWidth:40,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px"}}>Law</span><span style={{color:"var(--text-light)",fontSize:9}}>{rule.section}</span></div>
                         </div>
                         <div style={{marginTop:8}}>
                           <button className="btn" style={{fontSize:10,padding:"3px 9px"}} onClick={()=>setEditStatus({cin:company.cin,id:rule.id,current:st})}>
@@ -675,7 +706,7 @@ export default function App() {
                     );
                   })}
                 </div>
-                {filtered.length===0&&<div style={{textAlign:"center",padding:"36px",color:"#2a2a40"}}><div style={{fontSize:24,marginBottom:7}}>🔎</div><div style={{fontSize:12}}>No compliances match filters</div></div>}
+                {filtered.length===0&&<div style={{textAlign:"center",padding:"36px",color:"var(--text-light)"}}><div style={{fontSize:24,marginBottom:7}}>🔎</div><div style={{fontSize:12}}>No compliances match filters</div></div>}
               </div>
             )}
 
@@ -683,22 +714,22 @@ export default function App() {
             {tab==="directors"&&(
               <div>
                 {!(company.directors||[]).length?(
-                  <div style={{textAlign:"center",padding:"36px",color:"#3a3a55",fontSize:11}}>No directors data — upload MDS Excel or MGT-7 PDF to populate</div>
+                  <div style={{textAlign:"center",padding:"36px",color:"var(--text-dim)",fontSize:11}}>No directors data — upload MDS Excel or MGT-7 PDF to populate</div>
                 ):(
                   <div className="card" style={{overflow:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                      <thead><tr style={{borderBottom:"1px solid #0f0f1e"}}>
-                        {["#","DIN/PAN","Name","Designation","Category","Appointed","Cessation"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:8,fontWeight:700,color:"#2a2a42",textTransform:"uppercase",letterSpacing:".5px",whiteSpace:"nowrap"}}>{h}</th>)}
+                      <thead><tr style={{borderBottom:"1px solid var(--border)"}}>
+                        {["#","DIN/PAN","Name","Designation","Category","Appointed","Cessation"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:8,fontWeight:700,color:"var(--text-light)",textTransform:"uppercase",letterSpacing:".5px",whiteSpace:"nowrap"}}>{h}</th>)}
                       </tr></thead>
                       <tbody>{(company.directors||[]).map((d,i)=>(
-                        <tr key={i} className="row" style={{borderBottom:i<company.directors.length-1?"1px solid #0d0d1c":"none"}}>
-                          <td style={{padding:"8px 12px",color:"#2a2a42"}}>{i+1}</td>
+                        <tr key={i} className="row" style={{borderBottom:i<company.directors.length-1?"1px solid var(--border)":"none"}}>
+                          <td style={{padding:"8px 12px",color:"var(--text-light)"}}>{i+1}</td>
                           <td style={{padding:"8px 12px",fontFamily:"IBM Plex Mono,monospace",fontSize:10,color:"#818cf8"}}>{d["DIN/PAN"]||"—"}</td>
                           <td style={{padding:"8px 12px",fontWeight:600}}>{d["Name"]||"—"}</td>
-                          <td style={{padding:"8px 12px",color:"#7a7a99"}}>{d["Designation"]||"—"}</td>
-                          <td style={{padding:"8px 12px",color:"#4a4a66"}}>{d["Category"]||"—"}</td>
-                          <td style={{padding:"8px 12px",color:"#4a4a66",whiteSpace:"nowrap"}}>{d["Date of Appointment"]||"—"}</td>
-                          <td style={{padding:"8px 12px",color:(d["Cessation Date"]&&d["Cessation Date"]!=="-")?"#f87171":"#1a1a2e"}}>{d["Cessation Date"]||"—"}</td>
+                          <td style={{padding:"8px 12px",color:"var(--text-muted)"}}>{d["Designation"]||"—"}</td>
+                          <td style={{padding:"8px 12px",color:"var(--text-dim)"}}>{d["Category"]||"—"}</td>
+                          <td style={{padding:"8px 12px",color:"var(--text-dim)",whiteSpace:"nowrap"}}>{d["Date of Appointment"]||"—"}</td>
+                          <td style={{padding:"8px 12px",color:(d["Cessation Date"]&&d["Cessation Date"]!=="-")?"var(--danger)":"#1a1a2e"}}>{d["Cessation Date"]||"—"}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -715,20 +746,20 @@ export default function App() {
                   <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mgt7");setUploadErr("");}}>+ MGT-7 PDF</button>
                 </div>
                 {!(company.documents||[]).length?(
-                  <div style={{textAlign:"center",padding:"36px",color:"#3a3a55",fontSize:11}}>No documents uploaded yet</div>
+                  <div style={{textAlign:"center",padding:"36px",color:"var(--text-dim)",fontSize:11}}>No documents uploaded yet</div>
                 ):(
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
                     {(company.documents||[]).map((doc,i)=>(
                       <div key={i} className="card" style={{padding:"12px 15px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
                         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                          <div style={{width:34,height:34,borderRadius:7,background:"#1d4ed818",border:"1px solid #3b82f628",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{doc.type==="aoc4"?"📊":"📋"}</div>
+                          <div style={{width:34,height:34,borderRadius:7,background:"var(--accent)18",border:"1px solid var(--accent)28",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{doc.type==="aoc4"?"📊":"📋"}</div>
                           <div>
-                            <div style={{fontSize:11,fontWeight:700,color:"#93c5fd"}}>{doc.form||doc.type.toUpperCase()} <span className="mono" style={{fontSize:10,color:"#3a3a55"}}>{doc.srn}</span></div>
-                            <div style={{fontSize:10,color:"#3a3a55",marginTop:2}}>{doc.fileName} · Filed: {doc.filingDate||"—"} · FY {doc.fyFrom?.slice(6)||"—"}–{doc.fyTo?.slice(6)||"—"}</div>
-                            {doc.auditor&&<div style={{fontSize:9,color:"#2a2a42"}}>Auditor: {doc.auditor}</div>}
+                            <div style={{fontSize:11,fontWeight:700,color:"var(--accent)"}}>{doc.form||doc.type.toUpperCase()} <span className="mono" style={{fontSize:10,color:"var(--text-dim)"}}>{doc.srn}</span></div>
+                            <div style={{fontSize:10,color:"var(--text-dim)",marginTop:2}}>{doc.fileName} · Filed: {doc.filingDate||"—"} · FY {doc.fyFrom?.slice(6)||"—"}–{doc.fyTo?.slice(6)||"—"}</div>
+                            {doc.auditor&&<div style={{fontSize:9,color:"var(--text-light)"}}>Auditor: {doc.auditor}</div>}
                           </div>
                         </div>
-                        {doc.filingDate&&<span className="bg" style={{background:"#14532d18",color:"#4ade80",border:"1px solid #14532d33"}}>✓ {doc.filingDate}</span>}
+                        {doc.filingDate&&<span className="bg" style={{background:"var(--success)18",color:"var(--success)",border:"1px solid var(--success)33"}}>✓ {doc.filingDate}</span>}
                       </div>
                     ))}
                   </div>
@@ -740,37 +771,37 @@ export default function App() {
             {tab==="financials"&&(
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
                 <div className="card" style={{padding:"14px 16px"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#93c5fd",marginBottom:11}}>Capital Structure</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--accent)",marginBottom:11}}>Capital Structure</div>
                   {[["Authorised Capital",company.authorisedCapital?(+company.authorisedCapital*10000000).toLocaleString("en-IN"):"—"],["Paid-up Capital",company.paidUpCapital?(+company.paidUpCapital*10000000).toLocaleString("en-IN"):"—"],["Net Worth",company.networth?(+company.networth*10000000).toLocaleString("en-IN"):"—"]].map(([l,v])=>(
-                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #0d0d1c"}}>
-                      <span style={{fontSize:10,color:"#5a5a7a"}}>{l}</span>
-                      <span style={{fontSize:10,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"#e8e6ff"}}>₹{v}</span>
+                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border)"}}>
+                      <span style={{fontSize:10,color:"var(--text-dim)"}}>{l}</span>
+                      <span style={{fontSize:10,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"var(--text)"}}>₹{v}</span>
                     </div>
                   ))}
                 </div>
                 <div className="card" style={{padding:"14px 16px"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#6ee7b7",marginBottom:11}}>P&L Summary</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--success)",marginBottom:11}}>P&L Summary</div>
                   {[["Turnover",company.turnover?(+company.turnover*10000000).toLocaleString("en-IN"):"—"],["Net Profit/Loss",company.netProfit?(+company.netProfit*10000000).toLocaleString("en-IN"):"—"]].map(([l,v])=>(
-                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #0d0d1c"}}>
-                      <span style={{fontSize:10,color:"#5a5a7a"}}>{l}</span>
-                      <span style={{fontSize:10,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"#e8e6ff"}}>₹{v}</span>
+                    <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border)"}}>
+                      <span style={{fontSize:10,color:"var(--text-dim)"}}>{l}</span>
+                      <span style={{fontSize:10,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"var(--text)"}}>₹{v}</span>
                     </div>
                   ))}
                 </div>
                 <div className="card" style={{padding:"13px 16px",gridColumn:"1/-1"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#fbbf24",marginBottom:10}}>Manual Entry — Financial Data</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--warning)",marginBottom:10}}>Manual Entry — Financial Data</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:9}}>
                     {[["turnover","Turnover (₹ Cr)"],["networth","Net Worth (₹ Cr)"],["netProfit","Net Profit (₹ Cr)"]].map(([k,l])=>(
                       <div key={k}>
-                        <label style={{fontSize:8,fontWeight:700,color:"#3a3a55",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>{l}</label>
+                        <label style={{fontSize:8,fontWeight:700,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>{l}</label>
                         <input className="inp" type="number" step="0.0001" placeholder="0.0000" value={company[k]||""} onChange={async e=>{const nd={...db,companies:{...db.companies,[company.cin]:{...company,[k]:e.target.value}}};await persist(nd);}}/>
                       </div>
                     ))}
                   </div>
-                  <div style={{fontSize:9,color:"#2a2a42"}}>Enter in Crore (₹ Cr). These values determine applicability of CSR and XBRL filings.</div>
+                  <div style={{fontSize:9,color:"var(--text-light)"}}>Enter in Crore (₹ Cr). These values determine applicability of CSR and XBRL filings.</div>
                   <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:5}}>
                     {[["PaidUp ≥ ₹500 Cr → XBRL",+company.paidUpCapital>=500],["Turnover ≥ ₹500 Cr → XBRL",+company.turnover>=500],["NW ≥ ₹500 Cr → CSR",+company.networth>=500],["Turnover ≥ ₹1000 Cr → CSR",+company.turnover>=1000],["Net Profit ≥ ₹5 Cr → CSR",+company.netProfit>=5]].map(([l,v])=>(
-                      <div key={l} style={{fontSize:9,color:v?"#f87171":"#3a3a55"}}>{v?"⚠":"✓"} {l}</div>
+                      <div key={l} style={{fontSize:9,color:v?"var(--danger)":"var(--text-dim)"}}>{v?"⚠":"✓"} {l}</div>
                     ))}
                   </div>
                 </div>
@@ -788,9 +819,9 @@ export default function App() {
         const rule=COMPLIANCE_RULES.find(r=>r.id===editStatus.id);
         return (
           <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&setEditStatus(null)}>
-            <div style={{background:"#09091a",border:"1px solid #181828",borderRadius:14,padding:"20px",width:"100%",maxWidth:420}} className="up">
-              <div style={{fontSize:13,fontWeight:700,marginBottom:3}}>Update Filing Status</div>
-              <div style={{fontSize:10,color:"#3a3a55",marginBottom:14}}>{rule?.form} — {rule?.title}</div>
+            <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:14,padding:"20px",width:"100%",maxWidth:420}} className="up">
+              <div style={{fontSize:13,fontWeight:700,marginBottom:3,color:"var(--text)"}}>Update Filing Status</div>
+              <div style={{fontSize:10,color:"var(--text-dim)",marginBottom:14}}>{rule?.form} — {rule?.title}</div>
               <EditForm rule={rule} init={editStatus.current} onSave={d=>updateStatus(editStatus.cin,editStatus.id,d)} onCancel={()=>setEditStatus(null)}/>
             </div>
           </div>
@@ -800,10 +831,10 @@ export default function App() {
       {/* DELETE CONFIRM */}
       {delConfirm&&(
         <div style={{position:"fixed",inset:0,background:"#00000090",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
-          <div style={{background:"#09091a",border:"1px solid #7f1d1d44",borderRadius:14,padding:"22px",width:"100%",maxWidth:360,textAlign:"center"}} className="up">
+          <div style={{background:"var(--bg-card)",border:"1px solid var(--danger)44",borderRadius:14,padding:"22px",width:"100%",maxWidth:360,textAlign:"center"}} className="up">
             <div style={{fontSize:24,marginBottom:8}}>⚠️</div>
-            <div style={{fontSize:14,fontWeight:700,marginBottom:5}}>Remove Company?</div>
-            <div style={{fontSize:11,color:"#5a5a7a",marginBottom:18}}>All data for <strong style={{color:"#e8e6ff"}}>{db?.companies[delConfirm]?.companyName}</strong> will be permanently removed.</div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:5,color:"var(--text)"}}>Remove Company?</div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:18}}>All data for <strong style={{color:"var(--text)"}}>{db?.companies[delConfirm]?.companyName}</strong> will be permanently removed.</div>
             <div style={{display:"flex",gap:8,justifyContent:"center"}}>
               <button className="btn" onClick={()=>setDelConfirm(null)}>Cancel</button>
               <button className="btn red" onClick={()=>deleteCompany(delConfirm)}>Yes, Remove</button>
@@ -813,8 +844,8 @@ export default function App() {
       )}
 
       <div style={{maxWidth:1140,margin:"0 auto",padding:"0 16px 18px"}}>
-        <div style={{padding:"9px 13px",background:"#7f1d1d06",border:"1px solid #7f1d1d18",borderRadius:7,fontSize:9,color:"#2a2a40",lineHeight:1.7}}>
-          ⚠ <strong style={{color:"#f87171"}}>Disclaimer:</strong> Reference tool only. Due dates may vary per MCA circulars or company-specific facts. Verify with a practising CS/CA before filing.
+        <div style={{padding:"9px 13px",background:"var(--danger)06",border:"1px solid var(--danger)18",borderRadius:7,fontSize:9,color:"var(--text-light)",lineHeight:1.7}}>
+          ⚠ <strong style={{color:"var(--danger)"}}>Disclaimer:</strong> Reference tool only. Due dates may vary per MCA circulars. Verify with a practising CS/CA before filing.
         </div>
       </div>
     </div>
