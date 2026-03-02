@@ -1,34 +1,65 @@
-from fastapi import APIRouter, Request, Depends, HTTPException
-from typing import List, Dict, Any
-from auth_dependency import get_current_user
+from fastapi import Query
+from pymongo import ASCENDING, DESCENDING
+from datetime import datetime
 
-@router.get("/companies", response_model=Dict[str, List[Dict[str, Any]]])
+
+@router.get("/companies")
 def get_all_companies(
     request: Request,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+
+    # Pagination
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+
+    # Search
+    search: str = Query(None),
+
+    # Sorting
+    sort_by: str = Query("updatedAt"),
+    sort_order: str = Query("desc")  # asc | desc
 ):
     db = request.app.mongodb
+    firm_id = current_user["firm_id"]
 
-    firm_id = current_user.get("firm_id")
-    if not firm_id:
-        raise HTTPException(status_code=400, detail="Firm ID missing")
+    # ==========================
+    # FILTER
+    # ==========================
+    filter_query = {"firm_id": firm_id}
 
-    try:
-        companies_cursor = db.roc_companies.find(
-            {"firm_id": firm_id},
-            {"_id": 0}
-        )
+    if search:
+        filter_query["$or"] = [
+            {"companyName": {"$regex": search, "$options": "i"}},
+            {"cin": {"$regex": search, "$options": "i"}}
+        ]
 
-        companies = list(companies_cursor)
+    # ==========================
+    # SORT
+    # ==========================
+    order = DESCENDING if sort_order == "desc" else ASCENDING
 
-        return {
-            "success": True,
-            "count": len(companies),
-            "companies": companies
-        }
+    # ==========================
+    # PAGINATION
+    # ==========================
+    skip = (page - 1) * limit
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch companies: {str(e)}"
-        )
+    total_count = db.roc_companies.count_documents(filter_query)
+
+    companies_cursor = (
+        db.roc_companies
+        .find(filter_query, {"_id": 0})
+        .sort(sort_by, order)
+        .skip(skip)
+        .limit(limit)
+    )
+
+    companies = list(companies_cursor)
+
+    return {
+        "success": True,
+        "page": page,
+        "limit": limit,
+        "total": total_count,
+        "total_pages": (total_count + limit - 1) // limit,
+        "companies": companies
+    }
