@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from roc_router import router as roc_router
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 import os
@@ -27,3 +28,5 @@ app.mongodb = db
 @app.get("/")
 def home():
     return {"message": "RocSphere Backend Running"}
+
+app.include_router(roc_router, prefix="/api")
