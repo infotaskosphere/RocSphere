@@ -17,7 +17,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# ── CORS — must be registered BEFORE routers ───────────────────────────────────
+# ── CORS — registered BEFORE routers ──────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,20 +39,15 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
     logger.error(f"❌ MongoDB connection failed: {e}")
     app.mongodb = None
 
-# ── Routes ─────────────────────────────────────────────────────────────────────
-
+# ── Root ───────────────────────────────────────────────────────────────────────
 @app.get("/")
 def home():
     return {"message": "RocSphere Backend Running"}
 
-
+# ── Health check (ping this from UptimeRobot every 5 min to stay awake) ────────
+# UptimeRobot URL: https://rocsphere.onrender.com/health
 @app.get("/health")
 def health():
-    """
-    Health check — ping this URL every 5 min via UptimeRobot (free)
-    to keep the Render free-tier service awake and avoid fake CORS errors.
-    Monitor URL: https://YOUR-BACKEND.onrender.com/health
-    """
     mongo_ok = False
     try:
         if app.mongodb is not None:
@@ -60,12 +55,10 @@ def health():
             mongo_ok = True
     except Exception:
         pass
-
     return {
         "status": "ok",
         "mongodb": "connected" if mongo_ok else "disconnected",
     }
-
 
 # ── Routers ────────────────────────────────────────────────────────────────────
 app.include_router(roc_router, prefix="/api")
