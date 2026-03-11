@@ -15,11 +15,18 @@ const TODAY = new Date();
 const CUR_YEAR = TODAY.getFullYear();
 
 // ── AY helpers ────────────────────────────────────────────────────────────────
+// AY concept: AY "Y-(Y+1)" covers filings for FY Apr(Y-1) – Mar(Y)
+// e.g. AY 2024-25 → FY 2023-24 → Apr 1 2023 to Mar 31 2024
 const AY_OPTIONS = Array.from({length:6},(_,i)=>{
-  const y = CUR_YEAR - 2 + i;
-  return { value:`${y}-${String(y+1).slice(2)}`, fyStart: new Date(y,3,1), fyEnd: new Date(y+1,2,31,23,59,59) };
+  const y = CUR_YEAR - 1 + i; // AY label year
+  return {
+    value: `${y}-${String(y+1).slice(2)}`,
+    label: `AY ${y}-${String(y+1).slice(2)} (FY ${y-1}-${String(y).slice(2)})`,
+    fyStart: new Date(y-1,3,1),   // Apr 1 of (y-1)
+    fyEnd:   new Date(y,2,31,23,59,59), // Mar 31 of y
+  };
 });
-const DEFAULT_AY = AY_OPTIONS[2].value;
+const DEFAULT_AY = AY_OPTIONS[1].value; // current AY
 
 // ── AGM Cluster ───────────────────────────────────────────────────────────────
 const AGM_CLUSTER_IDS = ["aoc4","adt1","mgt14","mgt7","mgt7a"];
@@ -1396,18 +1403,28 @@ function MultiYearTab({companies, fetchCompanies, handlePDF}) {
     !searchCo||co.companyName.toLowerCase().includes(searchCo.toLowerCase())||(co.cin||"").toLowerCase().includes(searchCo.toLowerCase())
   );
 
-  const getStatus = (co, ruleId, ay) =>
-    co.filingStatus?.[`${ruleId}__${ay}`] ||
-    ((ay===MULTI_YEAR_AY_LIST[MULTI_YEAR_AY_LIST.length-2]||ay===MULTI_YEAR_AY_LIST[MULTI_YEAR_AY_LIST.length-3])
-      ? co.filingStatus?.[ruleId]
-      : undefined) ||
-    {status:"pending"};
+  const getStatus = (co, ruleId, ay) => {
+    const ayKey = `${ruleId}__${ay}`;
+    if (co.filingStatus?.[ayKey]) return co.filingStatus[ayKey];
+    // Fallback: check if base key's filedDate falls in this AY's FY window
+    const base = co.filingStatus?.[ruleId];
+    if (base?.filedDate) {
+      const [dd,mm,yyyy] = (base.filedDate||"").split("/").map(Number);
+      if (yyyy) {
+        const filed = new Date(yyyy,mm-1,dd);
+        const ayOpt = AY_OPTIONS.find(a=>a.value===ay);
+        if (ayOpt && filed >= ayOpt.fyStart && filed <= ayOpt.fyEnd) return base;
+      }
+    }
+    return {status:"pending", noData:true};
+  };
 
   const stDisplay = (st, applies) => {
     if (!applies) return {icon:"—", bg:"#f8fafc", col:"#cbd5e1", bd:"#f1f5f9"};
     const s = st?.status;
     if (s==="filed")  return {icon:"✓",   bg:"#f0fdf4", col:"#16a34a", bd:"#bbf7d0"};
     if (s==="na")     return {icon:"N/A", bg:"#f8fafc",  col:"#94a3b8", bd:"#e2e8f0"};
+    if (st?.noData)   return {icon:"·",   bg:"#f8fafc",  col:"#c4cdd6", bd:"#e8ecf0", noData:true};
     return               {icon:"○",   bg:"#fffbeb",  col:"#d97706", bd:"#fde68a"};
   };
 
@@ -1427,6 +1444,7 @@ function MultiYearTab({companies, fetchCompanies, handlePDF}) {
       }
       await fetchCompanies();
       setEditCell(null);
+      // toast is handled by parent via state lifting if needed
     } catch { alert("Save failed — please try again"); }
     setSaving(false);
   };
@@ -1657,6 +1675,19 @@ function MultiYearTab({companies, fetchCompanies, handlePDF}) {
   );
 }
 
+// ── Toast notification ───────────────────────────────────────────────────────
+function Toast({msg, type, onClose}) {
+  useEffect(()=>{ const t=setTimeout(onClose,4000); return()=>clearTimeout(t); },[onClose]);
+  const bg   = type==="success"?"linear-gradient(135deg,#0d7a70,#16a34a)":type==="error"?"linear-gradient(135deg,#dc2626,#b91c1c)":"linear-gradient(135deg,#1a5f8a,#0d2d4a)";
+  return (
+    <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,maxWidth:380,minWidth:260,background:bg,color:"#fff",borderRadius:12,padding:"13px 18px",boxShadow:"0 8px 32px rgba(0,0,0,.22)",display:"flex",alignItems:"flex-start",gap:10,animation:"up .25s ease"}} className="up">
+      <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{type==="success"?"✅":type==="error"?"❌":"ℹ️"}</span>
+      <div style={{flex:1,fontSize:12,fontWeight:600,lineHeight:1.5}}>{msg}</div>
+      <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:5,width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [db,          setDb]          = useState({companies:{}});
@@ -1680,6 +1711,7 @@ export default function App() {
   const [reminderModal, setReminderModal] = useState(null);
   const [filingIntelligence, setFilingIntelligence] = useState(null);
   const [showIntelPanel, setShowIntelPanel] = useState(false);
+  const [toast,          setToast]          = useState(null); // {msg, type}
 
   const ayOption = useMemo(()=>AY_OPTIONS.find(a=>a.value===selAY)||AY_OPTIONS[2],[selAY]);
   const calcDue  = (rule, co) => calcDueDates(rule, co, ayOption);
@@ -1775,18 +1807,35 @@ export default function App() {
   const companies  = useMemo(() => Object.values(db.companies), [db]);
   const company    = useMemo(() => selCin && db.companies[selCin] ? db.companies[selCin] : null, [selCin, db]);
   const applicable = useMemo(() => company ? COMPLIANCE_RULES.filter(r=>r.applies(company)) : [], [company]);
+  // Helper: get filing status for a given rule + current AY
+  const getAYStatus = (co, ruleId, ay) => {
+    const ayKey = `${ruleId}__${ay}`;
+    if (co?.filingStatus?.[ayKey]) return co.filingStatus[ayKey];
+    // Fallback: check if base key's filedDate falls within this AY's FY window
+    const base = co?.filingStatus?.[ruleId];
+    if (base?.filedDate) {
+      const [dd,mm,yyyy] = (base.filedDate||"").split("/").map(Number);
+      if (yyyy) {
+        const filed = new Date(yyyy,mm-1,dd);
+        const ayOpt = AY_OPTIONS.find(a=>a.value===ay);
+        if (ayOpt && filed >= ayOpt.fyStart && filed <= ayOpt.fyEnd) return base;
+      }
+    }
+    return {status:"pending"};
+  };
+
   const filtered   = useMemo(() => applicable.filter(r => {
-    const st = company?.filingStatus?.[r.id]?.status || "pending";
+    const st = getAYStatus(company, r.id, selAY)?.status || "pending";
     return (filterCat==="All"||r.cat===filterCat) &&
            (filterSt==="All"||filterSt===st) &&
            (!search||r.title.toLowerCase().includes(search.toLowerCase())||r.form.toLowerCase().includes(search.toLowerCase()));
-  }), [applicable, filterCat, filterSt, search, company]);
+  }), [applicable, filterCat, filterSt, search, company, selAY]);
 
   const globalUpcoming = useMemo(() => {
     const items = [];
     for (const co of companies) {
       for (const rule of COMPLIANCE_RULES.filter(r=>r.applies(co))) {
-        const st = co.filingStatus?.[rule.id]?.status || "pending";
+        const st = getAYStatus(co, rule.id, selAY)?.status || "pending";
         if (st==="filed"||st==="na") continue;
         const {upcoming:u} = calcDueDates(rule, co, ayOption);
         if (!u?.date) continue;
@@ -1803,7 +1852,7 @@ export default function App() {
       const rules = COMPLIANCE_RULES.filter(r=>r.applies(co));
       let filed=0, overdue=0, up30=0;
       for (const r of rules) {
-        const st = co.filingStatus?.[r.id]?.status || "pending";
+        const st = getAYStatus(co, r.id, selAY)?.status || "pending";
         if (st==="filed") { filed++; continue; }
         if (st==="na") continue;
         const {upcoming:u} = calcDueDates(r, co, ayOption);
@@ -1828,6 +1877,7 @@ export default function App() {
       await saveCompanyToBackend({...ex, ...p.master, directors:p.directors, charges:p.charges,
         updatedAt:new Date().toISOString(), filingStatus:ex.filingStatus||{}, documents:ex.documents||[]});
       setShowUpload(false); setSelCin(p.master.cin); setScreen("company"); setTab("compliances");
+      setToast({msg:`✅ MDS uploaded — ${p.master.companyName||p.master.cin} added/updated`, type:"success"});
     } catch(e) { setUploadErr("Failed: "+e.message); }
     setUploading(false);
   };
@@ -1924,6 +1974,7 @@ export default function App() {
       setSelCin(targetCin);
       setScreen("company");
       setTab("compliances");
+      setToast({msg:`✅ ${docRecord.form} uploaded successfully for ${p.companyName||targetCin}`, type:"success"});
 
     } catch(e) { setUploadErr("Failed: "+e.message); console.error(e); }
     setUploading(false);
@@ -2020,8 +2071,19 @@ export default function App() {
     setUploading(false);
   };
 
-  const updateStatus = async (cin, rid, data) => {
-    try { await updateFilingStatusAPI(cin, rid, data); setEditStatus(null); }
+  const updateStatus = async (cin, rid, data, ay) => {
+    try {
+      // Save with AY-specific key
+      const ayKey = ay ? `${rid}__${ay}` : rid;
+      await updateFilingStatusAPI(cin, ayKey, data);
+      // Also update the bare key for the 2 most recent AYs for backward compat
+      const recentAYs = AY_OPTIONS.slice(-3).map(a=>a.value);
+      if (!ay || recentAYs.includes(ay)) {
+        await updateFilingStatusAPI(cin, rid, data);
+      }
+      setEditStatus(null);
+      setToast({msg:`✅ Status updated for ${rid.toUpperCase().replace(/__.*$/,"")}`, type:"success"});
+    }
     catch(e) { alert("Failed to update: "+e.message); }
   };
 
@@ -2069,7 +2131,7 @@ export default function App() {
             <span style={{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px"}}>AY</span>
             <select value={selAY} onChange={e=>setSelAY(e.target.value)}
               style={{border:"none",background:"transparent",color:"#1a5f8a",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",outline:"none"}}>
-              {AY_OPTIONS.map(a=><option key={a.value} value={a.value}>{a.value}</option>)}
+              {AY_OPTIONS.map(a=><option key={a.value} value={a.value}>{a.label||a.value}</option>)}
             </select>
           </div>
           {globalUpcoming.length>0&&(
@@ -2290,7 +2352,7 @@ export default function App() {
                     {[...new Set(applicable.map(r=>r.cat))].map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
                   <div style={{marginLeft:"auto",fontSize:10,color:"#64748b",fontWeight:600}}>
-                    <span style={{color:"#1a5f8a",fontWeight:800}}>{applicable.filter(r=>(company.filingStatus?.[r.id]?.status||"pending")==="filed").length}</span> / {applicable.length} filed
+                    <span style={{color:"#1a5f8a",fontWeight:800}}>{applicable.filter(r=>(getAYStatus(company,r.id,selAY)?.status||"pending")==="filed").length}</span> / {applicable.length} filed
                     <span style={{color:"#94a3b8",marginLeft:8}}>· AY {selAY}</span>
                   </div>
                 </div>
@@ -2298,7 +2360,8 @@ export default function App() {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(310px,1fr))",gap:10}}>
                   {filtered.map(rule=>{
                     const col=CAT_COL[rule.cat]||{bg:"#f1f5f9",bd:"#e2e8f0",txt:"#64748b"};
-                    const st=company.filingStatus?.[rule.id]||{status:"pending"};
+                    const st=getAYStatus(company,rule.id,selAY)||{status:"pending"};
+                    const hasNoData=!company.filingStatus?.[`${rule.id}__${selAY}`]&&!company.filingStatus?.[rule.id];
                     const {upcoming:u}=calcDue(rule, company);
                     const n=u?daysLeft(u.date):null;
                     const urg=urgency(n);
@@ -2321,6 +2384,12 @@ export default function App() {
                           <div style={{fontWeight:600,fontSize:11,marginBottom:9,color:"#334155",lineHeight:1.4}}>{rule.title}</div>
                         </div>
                         <div style={{height:1,background:"#f1f5f9",marginBottom:9}}/>
+                        {hasNoData&&st.status==="pending"&&(
+                          <div style={{background:"#f8fafc",border:"1px dashed #cbd5e1",borderRadius:6,padding:"5px 9px",marginBottom:7,display:"flex",alignItems:"center",gap:6,fontSize:9,color:"#94a3b8"}}>
+                            <span style={{fontSize:11}}>📂</span>
+                            <span>No filing data added for <strong style={{color:"#64748b"}}>AY {selAY}</strong> — click "Update Status" to add</span>
+                          </div>
+                        )}
                         <div style={{display:"flex",flexDirection:"column",gap:5,fontSize:10}}>
                           {u&&<div style={{display:"flex",gap:7}}><span style={{color:"#94a3b8",minWidth:52,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px",paddingTop:1}}>Next Due</span><span style={{color:"#334155",fontWeight:500}}>{fmt(u.date)} <span style={{color:"#94a3b8",fontSize:9}}>({u.label})</span></span></div>}
                           {st.status==="filed"&&<div style={{display:"flex",gap:7}}><span style={{color:"#94a3b8",minWidth:52,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px"}}>Filed</span><span style={{color:"#16a34a",fontWeight:600}}>{st.filedDate||"-"} {st.srn&&<span className="mono" style={{color:"#0d7a70",fontSize:9}}>{st.srn}</span>}</span></div>}
@@ -2329,7 +2398,7 @@ export default function App() {
                         </div>
                         <div style={{marginTop:10}}>
                           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                            <button className="btn" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>setEditStatus({cin:company.cin,id:rule.id,current:st})}>
+                            <button className="btn" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>setEditStatus({cin:company.cin,id:rule.id,ay:selAY,current:st})}>
                               {st.status==="filed"?"Edit Status":"Update Status"}
                             </button>
                             {st.status!=="filed"&&st.status!=="na"&&(
@@ -2530,7 +2599,7 @@ export default function App() {
               <EditForm
                 init={editStatus.current}
                 rule={rule}
-                onSave={d=>updateStatus(editStatus.cin,editStatus.id,d)}
+                onSave={d=>updateStatus(editStatus.cin,editStatus.id,d,editStatus.ay||selAY)}
                 onCancel={()=>setEditStatus(null)}
                 onPdfUpload={async (file,parsed)=>{ await handlePDF(file, parsed.type); }}
               />
@@ -2557,6 +2626,8 @@ export default function App() {
           onClose={()=>setShowIntelPanel(false)}
         />
       )}
+
+      {toast&&<Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
 
       {delConfirm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
