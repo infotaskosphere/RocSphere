@@ -31,7 +31,7 @@ const COMPLIANCE_RULES = [
   { id:"mgt7",  form:"MGT-7",          title:"Annual Return",                            cat:"Annual Filing",       section:"Sec 92",            freq:"Annual",      agmLinked:true,  applies:(c)=>c.companyType!=="LLP"&&c.isSmallCompany!=="Yes",                                    tags:["Non-Small Co"]        },
   { id:"aoc4",  form:"AOC-4",          title:"Financial Statements Filing",              cat:"Annual Filing",       section:"Sec 137",           freq:"Annual",      agmLinked:true,  applies:(c)=>c.companyType!=="LLP",                                                              tags:["All Cos"]             },
   { id:"adt1",  form:"ADT-1",          title:"Appointment of Auditor",                   cat:"Annual Filing",       section:"Sec 139",           freq:"Annual/5yr",  agmLinked:true,  applies:(c)=>c.companyType!=="LLP",                                                              tags:["All Cos"]             },
-  { id:"mgt14", form:"MGT-14",         title:"Filing of Board / AGM Resolutions",        cat:"Annual Filing",       section:"Sec 117",           freq:"Event",       agmLinked:true,  applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed",                                tags:["Public/Listed"]       },
+  { id:"mgt14", form:"MGT-14",         title:"Filing of Board / AGM Resolutions",        cat:"Annual Filing",       section:"Sec 117",           freq:"Event",       agmLinked:true,  applies:(c)=>c.companyType!=="LLP",                                                              tags:["All Cos (Board Res)"] },
   // ── Fixed-date statutory ───────────────────────────────────────────────────
   { id:"dpt3",  form:"DPT-3",          title:"Return of Deposits",                       cat:"Statutory Return",    section:"Sec 73/Rule 16",    freq:"Annual",      agmLinked:false, applies:(c)=>c.companyType!=="LLP",                                                              tags:["Non-LLP"]             },
   { id:"msme1", form:"MSME-1",         title:"Outstanding Dues to MSME",                 cat:"Statutory Return",    section:"Sec 405",           freq:"Half-yearly", agmLinked:false, applies:()=>true,                                                                                tags:["All Cos"]             },
@@ -203,26 +203,258 @@ const extractPdfText = async (file) => {
 };
 const toC = (v) => v ? (v/10000000).toFixed(4) : "";
 
-const parseAOC4 = (txt, fileName) => {
-  const cin       = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
-  const nm1       = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
-  const srn       = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
-  const filingDate= txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
-  const agmDate   = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
-  const fyFrom    = txt.match(/From\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
-  const fyTo      = txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
-  const nwAbs     = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
-  const toAbs     = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1]||txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
-  const scAbs     = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
-  const auditor   = (txt.match(/Name of the auditor.*?firm\s+([A-Z][A-Z\s&.]+)/i)?.[1]||"").replace(/\s+/g," ").trim();
-  return { type:"aoc4", fileName, cin, companyName:nm1.replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom, fyTo,
-    turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, shareCapital:scAbs, auditor,
-    turnover:toC(toAbs), networth:toC(nwAbs), paidUpCapital:toC(scAbs) };
+// ── Check if PDF has DSC signature block ─────────────────────────────────────
+const checkPdfSigned = (txt) => {
+  const hasDSC          = /Digitally signed|digital signature|DSC/i.test(txt);
+  const hasSignerBlock  = /DIN\s*\d{8}|Director identification number/i.test(txt);
+  const hasFilingDate   = /eForm filing date/i.test(txt);
+  const hasOfficeSRN    = /eForm Service request number/i.test(txt);
+  const isFiled         = hasFilingDate && hasOfficeSRN;
+  // Masked DIN like 0*8*8*7* means MCA stamped this as a received/filed copy
+  const dscPattern      = /0\*\d\*\d\*\d\*|0\*8\*8\*7\*/.test(txt);
+  // SRN-like pattern in doc (e.g. 1765520583744)
+  const hasSRNInBody    = /\b1\d{12,13}\b/.test(txt);
+  // "To be digitally signed by" present but NO actual sig = draft/unsigned
+  const hasSignSlot     = /To be digitally signed by/i.test(txt);
+  const hasActualSig    = dscPattern || hasDSC;
+  const isDraft         = hasSignSlot && !hasActualSig && !isFiled;
+  // Extract signer DIN and name
+  const signerDIN       = txt.match(/DIN1?\s+(\d{8})/i)?.[1] || "";
+  const signerName      = (txt.match(/\*Name\s+([A-Z][A-Z\s]+(?:DHANRAJANI|KUMAR|SHAH|PATEL|[A-Z]{4,}))/i)?.[1] || "").trim();
+  // Extract SRN from body (MCA stamped)
+  const bodySRN         = txt.match(/\b(1\d{12,13})\b/)?.[1] || "";
+  // Signed = has masked DIN OR filed stamp; Draft = sign slot present but no actual sig
+  const isSignedCopy    = dscPattern || isFiled || hasSRNInBody;
+  const signStatus      = isDraft ? "draft" : isSignedCopy ? "signed" : "unknown";
+  return {
+    hasDSC, hasSignerBlock, hasFilingDate, hasOfficeSRN,
+    isFiled, dscPattern, isDraft, isSignedCopy, signStatus,
+    signerDIN, signerName, bodySRN,
+    signingIndicators: []
+      .concat(dscPattern   ? ["✓ Director DIN masked (MCA received copy)"] : [])
+      .concat(isFiled      ? ["✓ MCA eForm filing date & SRN present"] : [])
+      .concat(hasDSC       ? ["✓ DSC signature block found"] : [])
+      .concat(hasSRNInBody ? [`✓ SRN in document body: ${bodySRN}`] : [])
+      .concat(isDraft      ? ["⚠ Sign slot present but NO signature — likely draft/unsigned"] : [])
+      .concat(signerName   ? [`✓ Signed by: ${signerName}${signerDIN?" (DIN:"+signerDIN+")":""}`] : [])
+  };
 };
+
+// ── Detect form type from PDF text ──────────────────────────────────────────
+const detectFormType = (txt, fileName) => {
+  const fn = (fileName || "").toLowerCase();
+  if (/aoc.?2/i.test(fn)  || /Form No\.\s*AOC-2/i.test(txt))                         return "aoc2";
+  if (/aoc.?4/i.test(fn)  || /Form No\.\s*AOC-4/i.test(txt))                         return "aoc4";
+  // Auditor report: match filename fragments like "auditor_s_report" or "Extract_of_Auditor"
+  if (/auditor|extract.*audit/i.test(fn) ||
+      /Extract of Auditor.*Report|auditor.*report.*standalone/i.test(txt))             return "auditor_report";
+  if (/board.*report/i.test(fn) || /extract.*board.*report/i.test(txt))               return "board_report";
+  if (/mgt.?7a/i.test(fn) || /MGT-7A|Abridged Annual Return/i.test(txt))             return "mgt7a";
+  if (/mgt.?7/i.test(fn)  || /MGT-7|Annual Return/i.test(txt))                       return "mgt7";
+  if (/adt.?1/i.test(fn)  || /ADT-1|Appointment.*Auditor/i.test(txt))                return "adt1";
+  if (/dir.?12/i.test(fn) || /DIR-12/i.test(txt))                                    return "dir12";
+  if (/msme.?1/i.test(fn) || /MSME-1/i.test(txt))                                    return "msme1";
+  return "unknown";
+};
+
+// ── Enhanced AOC-4 parser ────────────────────────────────────────────────────
+const parseAOC4 = (txt, fileName) => {
+  const cin        = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
+  const nm1        = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
+  const srn        = txt.match(/eForm Service request number.*?([\d-]+)/i)?.[1]||txt.match(/SRN\s+([\dA-Z-]+)/)?.[1]||"";
+  const filingDate = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const agmDate    = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const fyFrom     = txt.match(/\*From.*?(\d{2}\/\d{2}\/\d{4})/)?.[1]||txt.match(/From\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
+  const fyTo       = txt.match(/\*To.*?(\d{2}\/\d{2}\/\d{4})/)?.[1]||txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
+  const boardMtgFS = txt.match(/Date of Board of directors.*?financial statements are approved.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const boardMtgBR = txt.match(/Date of Board of directors.*?boards.*?report.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const auditorSign= txt.match(/Date of signing.*?auditors.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const adtSRN     = txt.match(/SRN of Form ADT-1\s+([\dA-Z-]+)/i)?.[1]||"";
+  const authCapAbs = parseInt(txt.match(/Authorised capital.*?(\d+)/i)?.[1]||"0")||0;
+  // Balance sheet
+  const nwAbs      = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
+  const scAbs      = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
+  const resvAbs    = parseInt(txt.match(/Reserves and surplus\s+(-?\d+)/)?.[1]||"0")||0;
+  const ltbAbs     = parseInt(txt.match(/Long term borrowings\s+(\d+)/i)?.[1]||"0")||0;
+  const tpAbs      = parseInt(txt.match(/creditors other.*?enterprises\s+(\d+)/i)?.[1]||"0")||0;
+  const cashAbs    = parseInt(txt.match(/Cash and cash equivalents\s+(\d+)/)?.[1]||"0")||0;
+  const totalAbs   = parseInt(txt.match(/Total\s+([\d.]+)/)?.[1]||"0")||0;
+  // P&L
+  const revenueAbs = parseInt(txt.match(/Sale of goods manufactured\s+(\d+)/)?.[1]||"0")||0;
+  const totalIncomeAbs = parseInt(txt.match(/Total Income.*?(\d+\.\d+)/)?.[1]||"0")||0;
+  const totalExpAbs = parseInt(txt.match(/Total expenses\s+([\d.]+)/)?.[1]||"0")||0;
+  const lossAbs    = parseInt(txt.match(/Profit before tax.*?(-?\d+\.\d+)/)?.[1]||txt.match(/Profit\/.*?tax.*?(-?\d+)/)?.[1]||"0")||0;
+  const deprAbs    = parseInt(txt.match(/Depreciation and amortization expenses\s+(\d+)/)?.[1]||"0")||0;
+  const epsBasic   = txt.match(/Basic\s+(-?[\d.]+)/)?.[1]||"";
+  // Auditor
+  const auditorName= (txt.match(/Name of the auditor.*?firm\s+([A-Z][A-Z\s&.]+)/i)?.[1]||"").replace(/\s+/g," ").trim();
+  const auditorFRN = txt.match(/registration number\s+(\d{6}[A-Z])/i)?.[1]||"";
+  const auditorMem = txt.match(/Membership number\s+(\d+)/i)?.[1]||"";
+  const auditorPAN = txt.match(/Income-tax PAN.*?([A-Z]{5}\d{4}[A-Z])/)?.[1]||"";
+  // Directors
+  const dirMatches = [...txt.matchAll(/(\d{8})\s+([A-Z][A-Z\s]+(?:DHANRAJANI|LIMITED|KUMAR|SHAH|PATEL|JAIN|MEHTA|GUPTA|SINGH|AGARWAL|CHOPRA|[A-Z]{4,}))\s+(Director|Manager|CEO|CFO|Secretary)/gi)];
+  const directors = dirMatches.map(m=>({din:m[1], name:m[2].trim(), designation:m[3]}));
+  // Company flags
+  const isSmallCo = /small company/i.test(txt) ? "Yes" : "No";
+  const isOPC     = /one person company|OPC/i.test(txt) ? "Yes" : "No";
+  const hasSubsidiary = /subsidiary.*Yes|Yes.*subsidiary/i.test(txt) ? "Yes" : "No";
+  const caro      = /CARO.*No|No.*CARO/i.test(txt) ? "No" : "Yes";
+  // Signing check
+  const signInfo  = checkPdfSigned(txt);
+  return {
+    type:"aoc4", fileName, cin, companyName:(nm1||"").replace(/\s+/g," ").trim(),
+    srn, filingDate, lastAGM:agmDate, fyFrom, fyTo,
+    boardMeetingFS: boardMtgFS, boardMeetingBR: boardMtgBR, auditorSignDate: auditorSign,
+    adtSRN, authorisedCapitalAbsolute: authCapAbs,
+    // Balance sheet
+    shareCapitalAbsolute: scAbs, reservesAbsolute: resvAbs, ltBorrowingsAbsolute: ltbAbs,
+    tradePayablesAbsolute: tpAbs, cashAbsolute: cashAbs, totalAssetsAbsolute: totalAbs,
+    netWorthAbsolute: nwAbs,
+    // P&L
+    revenueAbsolute: revenueAbs, totalIncomeAbsolute: totalIncomeAbs,
+    totalExpensesAbsolute: totalExpAbs, netLossAbsolute: lossAbs, depreciationAbsolute: deprAbs,
+    epsBasic,
+    // Auditor
+    auditor: auditorName, auditorFRN, auditorMembership: auditorMem, auditorPAN,
+    directors,
+    // Flags
+    isSmallCompany: isSmallCo, isOPC, hasSubsidiary, caroApplicable: caro,
+    // Derived (for MCA compatibility fields)
+    turnoverAbsolute: revenueAbs, netWorthAbsoluteVal: nwAbs,
+    turnover: toC(revenueAbs), networth: toC(nwAbs), paidUpCapital: toC(scAbs),
+    authorisedCapital: toC(authCapAbs),
+    // Signing
+    signInfo,
+    // Computed filing intelligence
+    filingIntelligence: null, // will be populated by computeFilingIntelligence()
+  };
+};
+
+// ── Auditor's Report parser ──────────────────────────────────────────────────
+const parseAuditorReport = (txt, fileName) => {
+  // Company name — from "Financial Statements of XYZ" or "*Name of the company XYZ"
+  const cin         = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1] || "";
+  const companyName = (
+    txt.match(/Financial Statements of ([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED))/i)?.[1] ||
+    txt.match(/\*Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED))/i)?.[1] ||
+    ""
+  ).replace(/\s+/g," ").trim();
+  const srn          = txt.match(/eForm Service request number.*?([\d-]+)/i)?.[1] || txt.match(/SRN\s+([\dA-Z-]+)/)?.[1] || "";
+  const filingDate   = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1] || "";
+  // Audit opinion
+  const opinion      = /unqualified|true and fair view/i.test(txt) ? "Unqualified (Clean)" :
+                       /adverse/i.test(txt) ? "Adverse" :
+                       /disclaimer/i.test(txt) ? "Disclaimer" :
+                       /qualified/i.test(txt) ? "Qualified" : "Unknown";
+  // Qualifications count
+  const qualCount    = parseInt(txt.match(/Number of qualifications.*?(\d+)/i)?.[1] || "0") || 0;
+  // CARO applicability
+  const caroAppl     = /CARO.*No|CARO.*not applicable|not applicable.*CARO|small company.*not applicable/i.test(txt) ? "No" : "Yes";
+  // Emphasis of matter
+  const emphasis     = /Emphasis of matter[^N]*NA|emphasis.*?\bNA\b/i.test(txt) ? "None" : "Present";
+  // IFC applicability (Internal Financial Controls)
+  const ifcExempt    = /exempted from.*Internal Financial controls|turnover.*less.*50 Crores/i.test(txt) ? "Exempted" : "Applicable";
+  // Signer details
+  const signInfo     = checkPdfSigned(txt);
+  const signerDIN    = txt.match(/DIN1?\s+(\d{8})/i)?.[1] || "";
+  const signerName   = (txt.match(/\*Name\s+([A-Z][A-Z\s]+(?:DHANRAJANI|KUMAR|SHAH|PATEL|[A-Z]{4,}))/i)?.[1] || "").trim();
+  const signerDes    = txt.match(/\*Designation.*?(Director|Manager|Secretary)/i)?.[1] || "";
+  // Board responsibility text present
+  const hasBoardResp = /Companys Board of Directors is responsible/i.test(txt);
+  // Going concern
+  const goingConcern = /going concern/i.test(txt) ? "Mentioned" : "Not mentioned";
+  // Fraud
+  const fraudMention = /fraud/i.test(txt) && !/no.*fraud/i.test(txt) ? "Mentioned" : "None";
+  // Section 197 (managerial remuneration) — not applicable for private
+  const sec197Note   = /section 197 is not applicable on private company/i.test(txt) ? "N/A (Private Co)" : "";
+  // IEPF
+  const iepfNote     = /no delay in transferring.*Investor Education/i.test(txt) ? "No delays" : "";
+  return {
+    type: "auditor_report", fileName, cin, companyName, srn, filingDate,
+    auditOpinion: opinion, qualificationsCount: qualCount,
+    caroApplicable: caroAppl, emphasisOfMatter: emphasis,
+    ifcApplicability: ifcExempt,
+    signerDIN, signerName, signerDesignation: signerDes,
+    goingConcern, fraudMention, sec197Note, iepfNote,
+    hasBoardResponsibility: hasBoardResp,
+    signInfo,
+  };
+};
+
+// ── Board's Report parser ────────────────────────────────────────────────────
+const parseBoardReport = (txt, fileName) => {
+  const cin         = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
+  const companyName = (txt.match(/\*Name of the Company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED))/i)?.[1]||"").trim();
+  const srn         = txt.match(/eForm Service request number.*?([\d-]+)/i)?.[1]||txt.match(/SRN\s+([\dA-Z-]+)/)?.[1]||"";
+  const isSmallCo   = /OPC or Small Company.*Yes|Yes.*Small/i.test(txt) ? "Yes" : "No";
+  const boardMtgs   = parseInt(txt.match(/Number of meetings held\s+(\d+)/i)?.[1]||"0")||0;
+  const csrAppl     = /CSR.*not applicable|Not applicable.*CSR/i.test(txt) ? "No" : "Yes";
+  const fraud       = /no fraud reported|no.*fraud/i.test(txt) ? "None" : "Reported";
+  const lossAmt     = parseInt(txt.match(/incurred a loss of Rs\.\s*([\d,]+)/i)?.[1]?.replace(/,/g,"")||"0")||0;
+  const secretAudit = /Secretarial Audit.*No|No.*Secretarial/i.test(txt) ? "No" : "Yes";
+  const signInfo    = checkPdfSigned(txt);
+  const signerDIN   = txt.match(/DIN1?\s+(\d{8})/i)?.[1]||"";
+  return {
+    type:"board_report", fileName, cin, companyName, srn,
+    isSmallCompany: isSmallCo, boardMeetingsHeld: boardMtgs,
+    csrApplicable: csrAppl, fraudReported: fraud,
+    lossForYear: lossAmt, secretarialAuditApplicable: secretAudit,
+    signerDIN, signInfo,
+  };
+};
+
+// ── AOC-2 parser ─────────────────────────────────────────────────────────────
+const parseAOC2 = (txt, fileName) => {
+  const cin          = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1] || "";
+  const companyName  = (
+    txt.match(/\*Name of the Company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED))/i)?.[1] || ""
+  ).replace(/\s+/g," ").trim();
+  const srn          = txt.match(/eForm Service request number.*?([\d-]+)/i)?.[1] || txt.match(/SRN\s+([\dA-Z-]+)/)?.[1] || "";
+  const filingDate   = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1] || "";
+  // Non-arm's length count
+  const nonArmCount  = parseInt(txt.match(/Number of contracts.*?not at arm.*?(\d+)/i)?.[1] || "0") || 0;
+  // Arm's length count
+  const armCount     = parseInt(txt.match(/Number of material contracts.*?arm.*?length.*?(\d+)/i)?.[1] || "0") || 0;
+  // Related party details (all blocks)
+  const rptBlocks   = [];
+  // Find all Block sections with party names
+  const blockMatches = [...txt.matchAll(/Name.*?of the related party\s+([A-Za-z\s]+?)(?:\n|Nature of relationship)/gi)];
+  blockMatches.forEach(m => {
+    const name   = m[1].trim();
+    const idxAfter = txt.indexOf(m[0]) + m[0].length;
+    const section  = txt.slice(txt.indexOf(m[0]), txt.indexOf(m[0]) + 500);
+    const relNature= section.match(/Nature of relationship\s+(\w[^\n]+)/i)?.[1]?.trim() || "";
+    const txnNature= section.match(/Nature of contracts.*?transactions\s+([A-Za-z\s&,]+)/i)?.[1]?.trim() || "";
+    const amount   = parseInt(section.match(/Salient terms.*?contractual amount\s+(\d+)/i)?.[1] || "0") || 0;
+    const boardDate= section.match(/Date of approval.*?Board.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1] || "";
+    const pan      = section.match(/([A-Z]{5}\d{4}[A-Z])/)?.[1] || "";
+    const advances = parseInt(section.match(/Amount paid as advances.*?(\d+)/i)?.[1] || "0") || 0;
+    rptBlocks.push({ name, relNature, txnNature, amount, boardDate, pan, advances });
+  });
+  // Fallback single-party extract
+  const rptName   = rptBlocks[0]?.name   || (txt.match(/Name.*?of the related party\s+([A-Za-z\s]+)/i)?.[1]||"").trim();
+  const rptNature = rptBlocks[0]?.txnNature || (txt.match(/Nature of contracts.*?transactions\s+([A-Za-z\s]+)/i)?.[1]||"").trim();
+  const rptAmount = rptBlocks[0]?.amount  || parseInt(txt.match(/Salient terms.*?contractual amount\s+(\d+)/i)?.[1]||"0")||0;
+  const rptRelNat = rptBlocks[0]?.relNature || "";
+  const rptBoardApproval = rptBlocks[0]?.boardDate || "";
+  const signInfo  = checkPdfSigned(txt);
+  const signerDIN = txt.match(/DIN1?\s+(\d{8})/i)?.[1] || "";
+  return {
+    type: "aoc2", fileName, cin, companyName, srn, filingDate,
+    nonArmLengthCount: nonArmCount, armLengthCount: armCount,
+    rptBlocks,
+    relatedPartyName: rptName, relatedPartyNature: rptNature,
+    relatedPartyRelationship: rptRelNat,
+    relatedPartyAmount: rptAmount, relatedPartyBoardApproval: rptBoardApproval,
+    signerDIN, signInfo,
+  };
+};
+
+// ── MGT-7/7A parser (existing, enhanced) ────────────────────────────────────
 const parseMGT7 = (txt, fileName) => {
   const cin          = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
   const nm1          = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
-  const srn          = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
+  const srn          = txt.match(/eForm Service request number.*?([\dA-Z-]+)/i)?.[1]||txt.match(/SRN\s+([\dA-Z-]+)/)?.[1]||"";
   const filingDate   = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
   const agmDate      = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
   const fyFrom       = txt.match(/Financial year.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
@@ -232,8 +464,256 @@ const parseMGT7 = (txt, fileName) => {
   const nwAbs        = parseInt(txt.match(/Net worth.*?(-?\d+)/i)?.[1]||"0")||0;
   const dirMatches   = [...txt.matchAll(/(\d{8})\s+([A-Z][A-Z\s]+?)\s+(?:Director|Manager)/g)];
   const directors    = dirMatches.map(m=>({"DIN/PAN":m[1],"Name":m[2].replace(/\s+/g," ").trim(),"Designation":"Director","Date of Appointment":"-","Cessation Date":"-"}));
-  return { type:"mgt7", fileName, cin, companyName:nm1.replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom,
-    isSmallCompany, companyType, directors, turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, turnover:toC(toAbs), networth:toC(nwAbs) };
+  const signInfo     = checkPdfSigned(txt);
+  return { type:"mgt7", fileName, cin, companyName:(nm1||"").replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom,
+    isSmallCompany, companyType, directors, turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs,
+    turnover:toC(toAbs), networth:toC(nwAbs), signInfo };
+};
+
+// ── Smart auto-router: detect form type then parse ──────────────────────────
+const parseAnyPDF = (txt, fileName) => {
+  const formType = detectFormType(txt, fileName);
+  switch(formType) {
+    case "aoc4":          return parseAOC4(txt, fileName);
+    case "auditor_report":return parseAuditorReport(txt, fileName);
+    case "board_report":  return parseBoardReport(txt, fileName);
+    case "aoc2":          return parseAOC2(txt, fileName);
+    case "mgt7":
+    case "mgt7a":         return parseMGT7(txt, fileName);
+    default:              return { type:"unknown", fileName, formType, srn:"", companyName:"", signInfo: checkPdfSigned(txt) };
+  }
+};
+
+// ── Filing Intelligence Engine ───────────────────────────────────────────────
+// Given an AOC-4 parsed object + existing filing statuses, compute what needs to be filed
+// ── Filing Intelligence Engine ───────────────────────────────────────────────
+const computeFilingIntelligence = (aoc4Data, company, audRptData, aoc2Data) => {
+  const alerts = [];
+  const autoUpdates = {}; // rule_id -> {status, srn, notes}
+  const advice = [];
+  const masterDiffs = []; // {field, pdfVal, masterVal}
+
+  if (!aoc4Data || aoc4Data.type !== "aoc4") return { alerts, autoUpdates, advice, masterDiffs };
+
+  const { fyFrom, fyTo, lastAGM, srn, filingDate, adtSRN, isSmallCompany,
+    boardMeetingFS, boardMeetingBR, auditorSignDate,
+    revenueAbsolute, lossForYear, netWorthAbsolute, directors,
+    auditor, auditorFRN, companyName, cin,
+    authorisedCapitalAbsolute, shareCapitalAbsolute } = aoc4Data;
+
+  // ── AOC-4 itself ─────────────────────────────────────────────────────────
+  if (srn && filingDate) {
+    autoUpdates["aoc4"] = { status:"filed", srn, filedDate:filingDate, notes:`Auto-imported from PDF. FY: ${fyFrom} to ${fyTo}` };
+    alerts.push({ level:"success", msg:`✓ AOC-4 filed on ${filingDate} (SRN: ${srn})` });
+  } else {
+    alerts.push({ level:"warning", msg:`⚠ AOC-4 PDF uploaded but no MCA SRN/filing date found — may be a draft or unsigned copy` });
+  }
+
+  // ── ADT-1 referenced in AOC-4 ───────────────────────────────────────────
+  if (adtSRN) {
+    autoUpdates["adt1"] = { status:"filed", srn:adtSRN, filedDate:"", notes:`Referenced in AOC-4. Auditor: ${auditor} (FRN: ${auditorFRN})` };
+    alerts.push({ level:"success", msg:`✓ ADT-1 SRN found in AOC-4: ${adtSRN} — Auditor: ${auditor}` });
+  }
+
+  // ── Auditor Report cross-check ───────────────────────────────────────────
+  if (audRptData) {
+    if (audRptData.auditOpinion === "Unqualified (Clean)") {
+      alerts.push({ level:"success", msg:`✓ Auditor's Report: Clean/Unqualified opinion for FY ${fyFrom?.slice(6)}–${fyTo?.slice(3,5)}` });
+    }
+    if (audRptData.caroApplicable === "No") {
+      alerts.push({ level:"info", msg:`ℹ CARO not applicable (small company exemption). AOC-4 CARO field: ${aoc4Data.caroApplicable}` });
+    }
+    if (audRptData.ifcApplicability === "Exempted") {
+      alerts.push({ level:"info", msg:`ℹ IFC audit exempted — turnover below ₹50 Cr threshold` });
+    }
+    if (audRptData.signerName) {
+      alerts.push({ level:"success", msg:`✓ Auditor's Report signed by: ${audRptData.signerName}` });
+    }
+  }
+
+  // ── AOC-2 linked to AOC-4 ────────────────────────────────────────────────
+  if (aoc2Data) {
+    if (aoc2Data.armLengthCount > 0 || aoc2Data.nonArmLengthCount > 0) {
+      autoUpdates["mgt14"] = { status:"pending", srn:"", filedDate:"", notes:`AOC-2 has RPT. Check MGT-14 for board resolution filing (if applicable).` };
+      const party = aoc2Data.relatedPartyName || "party";
+      const amt   = aoc2Data.relatedPartyAmount > 0 ? ` ₹${aoc2Data.relatedPartyAmount.toLocaleString("en-IN")}` : "";
+      alerts.push({ level:"info", msg:`ℹ AOC-2 includes ${aoc2Data.armLengthCount} arm's length RPT with ${party} —${amt}. Board approved: ${aoc2Data.relatedPartyBoardApproval || "—"}` });
+    }
+  }
+
+  // ── AGM → MGT-7/7A deadline ──────────────────────────────────────────────
+  if (lastAGM) {
+    const agm      = parseIndDate(lastAGM);
+    if (agm) {
+      const mgt7Due  = addDays(agm, 60);
+      const mgt7Id   = isSmallCompany === "Yes" ? "mgt7a" : "mgt7";
+      const mgt7Lbl  = isSmallCompany === "Yes" ? "MGT-7A (Small Co)" : "MGT-7";
+      const today    = new Date();
+      if (mgt7Due < today) {
+        const dOver = Math.floor((today - mgt7Due) / 86400000);
+        alerts.push({ level:"warning", msg:`⚠ ${mgt7Lbl} due was ${fmt(mgt7Due)} — ${dOver} days overdue. File immediately.` });
+        advice.push({ priority:"HIGH", form:mgt7Lbl, ruleId:mgt7Id, due:fmt(mgt7Due), note:`Overdue by ${dOver} days — late fees applicable` });
+      } else {
+        const dl = Math.floor((mgt7Due - today) / 86400000);
+        alerts.push({ level:"info", msg:`ℹ ${mgt7Lbl} due on ${fmt(mgt7Due)} (${dl} days remaining)` });
+        advice.push({ priority: dl<=30?"HIGH":"MEDIUM", form:mgt7Lbl, ruleId:mgt7Id, due:fmt(mgt7Due), note:`${dl} days left` });
+      }
+
+      // ── MGT-14 board meeting 30-day window ─────────────────────────────
+      if (boardMeetingBR) {
+        const bm = parseIndDate(boardMeetingBR);
+        if (bm) {
+          const mgt14Due = addDays(bm, 30);
+          if (mgt14Due < today) {
+            alerts.push({ level:"warning", msg:`⚠ MGT-14 for Board Report resolution (Board Mtg: ${boardMeetingBR}) — due was ${fmt(mgt14Due)}` });
+            advice.push({ priority:"MEDIUM", form:"MGT-14", ruleId:"mgt14", due:fmt(mgt14Due), note:"Public Co only — if applicable, file now with late fee" });
+          } else {
+            advice.push({ priority:"LOW", form:"MGT-14", ruleId:"mgt14", due:fmt(mgt14Due), note:"Board resolution filing (public companies)" });
+          }
+        }
+      }
+    }
+  }
+
+  // ── Director KYC ─────────────────────────────────────────────────────────
+  if (directors && directors.length > 0) {
+    alerts.push({ level:"info", msg:`ℹ DIR-3 KYC required for ${directors.length} director(s): ${directors.map(d=>d.name||d.din).join(", ")}` });
+    advice.push({ priority:"MEDIUM", form:"DIR-3 KYC", ruleId:"dir3k", due:"30 Sep annually", note:`${directors.length} director(s) must complete KYC by 30 Sep` });
+  }
+
+  // ── Statutory: MSME-1 / DPT-3 ───────────────────────────────────────────
+  advice.push({ priority:"LOW", form:"MSME-1", ruleId:"msme1", due:"31 Oct & 30 Apr", note:"File if outstanding dues to MSME vendors >45 days" });
+  advice.push({ priority:"LOW", form:"DPT-3",  ruleId:"dpt3",  due:"30 Jun annually", note:"Return of deposits/loans even if NIL" });
+
+  // ── Financial flag: negative net worth ───────────────────────────────────
+  if (netWorthAbsolute < 0) {
+    alerts.push({ level:"critical", msg:`🔴 NEGATIVE NET WORTH: ₹${Math.abs(netWorthAbsolute).toLocaleString("en-IN")} — monitor going concern; possible IBC applicability` });
+  }
+
+  // ── Master data cross-check ──────────────────────────────────────────────
+  if (company) {
+    const checks = [
+      { field:"Company Name",   pdf:companyName,           master:company.companyName },
+      { field:"Small Company",  pdf:isSmallCompany,        master:company.isSmallCompany },
+      { field:"Last AGM",       pdf:lastAGM,               master:company.lastAGM },
+    ];
+    checks.forEach(({ field, pdf, master }) => {
+      if (pdf && master && pdf.toString().trim().toUpperCase() !== master.toString().trim().toUpperCase()) {
+        masterDiffs.push({ field, pdfVal:pdf, masterVal:master });
+        alerts.push({ level:"warning", msg:`⚠ Master data mismatch — ${field}: PDF says "${pdf}", Master says "${master}"` });
+      } else if (pdf && master) {
+        alerts.push({ level:"success", msg:`✓ ${field} consistent: "${pdf}"` });
+      }
+    });
+  }
+
+  return { alerts, autoUpdates, advice, masterDiffs };
+};
+
+// ── Cross-document verification: cross-check AOC-4 vs Auditor Report vs Board Report ──
+const crossVerifyDocuments = (parsedDocs) => {
+  const issues = [];
+  const aoc4   = parsedDocs.find(d => d.type === "aoc4");
+  const audRpt = parsedDocs.find(d => d.type === "auditor_report");
+  const brdRpt = parsedDocs.find(d => d.type === "board_report");
+  const aoc2   = parsedDocs.find(d => d.type === "aoc2");
+
+  // ── 1. Company name consistency ────────────────────────────────────────────
+  const names = parsedDocs.map(d => d.companyName).filter(Boolean);
+  const uniqueNames = [...new Set(names.map(n => n.replace(/\s+/g," ").trim().toUpperCase()))];
+  if (uniqueNames.length > 1) {
+    issues.push({ level:"error", msg:`Company name mismatch across documents: ${uniqueNames.join(" | ")}` });
+  } else if (uniqueNames.length === 1 && parsedDocs.length > 1) {
+    issues.push({ level:"success", msg:`✓ Company name consistent across all ${parsedDocs.length} document(s): ${uniqueNames[0]}` });
+  }
+
+  // ── 2. Signed / filed status per document ──────────────────────────────────
+  parsedDocs.forEach(d => {
+    const label  = {aoc4:"AOC-4", auditor_report:"Auditor's Report", board_report:"Board's Report", aoc2:"AOC-2", mgt7:"MGT-7", mgt7a:"MGT-7A"}[d.type] || d.type;
+    const si     = d.signInfo;
+    if (!si) return;
+    if (si.signStatus === "draft") {
+      issues.push({ level:"warning", msg:`⚠ ${label} (${d.fileName}) — Sign slot present but NO signature detected. Likely a DRAFT/unsigned copy. Do NOT use this for filing.` });
+    } else if (si.isSignedCopy) {
+      const extra = si.signerName ? ` — Signed by: ${si.signerName}` : "";
+      issues.push({ level:"success", msg:`✓ ${label} is a signed MCA copy${extra}` });
+    } else {
+      issues.push({ level:"warning", msg:`⚠ ${label} (${d.fileName}) — Could not confirm MCA filing stamp. Verify before submitting.` });
+    }
+  });
+
+  // ── 3. Auditor Report vs AOC-4 cross-tally ─────────────────────────────────
+  if (aoc4 && audRpt) {
+    // Opinion
+    if (audRpt.auditOpinion === "Unqualified (Clean)") {
+      issues.push({ level:"success", msg:`✓ Audit opinion: Unqualified (Clean) — consistent with AOC-4 filing` });
+    } else {
+      issues.push({ level:"critical", msg:`🔴 Audit opinion is NOT clean (${audRpt.auditOpinion}) — requires special attention before filing AOC-4` });
+    }
+    // CARO
+    if (audRpt.caroApplicable === "No") {
+      issues.push({ level:"info", msg:`ℹ CARO not applicable (small company) — consistent with AOC-4 small company flag: ${aoc4.isSmallCompany}` });
+    }
+    // Qualifications
+    if (audRpt.qualificationsCount > 0) {
+      issues.push({ level:"warning", msg:`⚠ ${audRpt.qualificationsCount} audit qualification(s) found in Auditor's Report — check compliance impact` });
+    } else {
+      issues.push({ level:"success", msg:`✓ No audit qualifications (${audRpt.qualificationsCount}) — clean report` });
+    }
+    // Signer cross-check
+    if (audRpt.signerDIN && aoc4.auditorSignDate) {
+      issues.push({ level:"success", msg:`✓ Auditor sign date in AOC-4: ${aoc4.auditorSignDate}; Auditor Report signer DIN: ${audRpt.signerDIN}` });
+    }
+    // IFC exemption
+    if (audRpt.ifcApplicability === "Exempted") {
+      issues.push({ level:"info", msg:`ℹ IFC audit exempted — turnover < ₹50 Cr and borrowings < ₹25 Cr (as reported in Auditor's Report)` });
+    }
+    // Emphasis
+    if (audRpt.emphasisOfMatter === "Present") {
+      issues.push({ level:"warning", msg:`⚠ Emphasis of matter present in Auditor's Report — review before finalising AOC-4` });
+    }
+    // Fraud
+    if (audRpt.fraudMention === "Mentioned") {
+      issues.push({ level:"critical", msg:`🔴 Fraud mentioned in Auditor's Report — mandatory reporting obligations under Sec 143(12)` });
+    }
+  }
+
+  // ── 4. Board report vs AOC-4 ──────────────────────────────────────────────
+  if (aoc4 && brdRpt) {
+    if (brdRpt.fraudReported !== "None") {
+      issues.push({ level:"critical", msg:`🔴 Fraud reported in Board's Report — immediate follow-up required` });
+    }
+    if (brdRpt.isSmallCompany === aoc4.isSmallCompany) {
+      issues.push({ level:"success", msg:`✓ Small Company status consistent across AOC-4 & Board's Report: ${aoc4.isSmallCompany}` });
+    } else {
+      issues.push({ level:"warning", msg:`⚠ Small Company status mismatch: AOC-4 says "${aoc4.isSmallCompany}", Board Report says "${brdRpt.isSmallCompany}"` });
+    }
+  }
+
+  // ── 5. AOC-2 related party tally ──────────────────────────────────────────
+  if (aoc2) {
+    if (aoc2.nonArmLengthCount > 0) {
+      issues.push({ level:"warning", msg:`⚠ AOC-2: ${aoc2.nonArmLengthCount} non-arm's length related party transaction(s) — verify board/shareholder approval under Sec 188` });
+    } else {
+      issues.push({ level:"success", msg:`✓ AOC-2: No non-arm's length related party transactions` });
+    }
+    if (aoc2.armLengthCount > 0) {
+      const party = aoc2.relatedPartyName || "Party";
+      const amt   = aoc2.relatedPartyAmount > 0 ? ` — ₹${aoc2.relatedPartyAmount.toLocaleString("en-IN")}` : "";
+      const rel   = aoc2.relatedPartyRelationship ? ` (${aoc2.relatedPartyRelationship})` : "";
+      issues.push({ level:"info", msg:`ℹ AOC-2: ${aoc2.armLengthCount} arm's length material transaction(s). Party: ${party}${rel}${amt}` });
+      // Check board approval date
+      if (aoc2.relatedPartyBoardApproval) {
+        issues.push({ level:"success", msg:`✓ AOC-2 RPT board approval dated: ${aoc2.relatedPartyBoardApproval}` });
+      }
+    }
+    // Suggest MGT-14 if RPT approved by board
+    if (aoc2.armLengthCount > 0 || aoc2.nonArmLengthCount > 0) {
+      issues.push({ level:"info", msg:`ℹ AOC-2 filed as attachment to AOC-4. Ensure MGT-14 filed for board resolution approving RPT (if company is public/listed).` });
+    }
+  }
+
+  return issues;
 };
 const parseMDS = (file) => new Promise((res,rej) => {
   const reader = new FileReader();
@@ -532,20 +1012,75 @@ function DropZone({icon,label,sub,loading,loadingText,onClick}) {
   );
 }
 
-function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
+// ── Batch Upload Tab — supports Auditor Report + AOC-2 + AOC-4 cluster ────────
+function BatchUploadTab({onMulti, loading}) {
+  const inputRef = useRef();
+  const [dragOver, setDragOver] = useState(false);
+  const [queued, setQueued] = useState([]);
+
+  const handleFiles = (files) => {
+    const arr = [...files].filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    setQueued(arr);
+  };
+
+  return (
+    <div>
+      <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"10px 13px",marginBottom:12,fontSize:10,color:"#1a5f8a",lineHeight:1.7}}>
+        <strong>📁 Batch Upload — AOC-4 Cluster</strong><br/>
+        Upload <strong>AOC-4 + Auditor's Report + AOC-2 + Board's Report</strong> together. The system will:<br/>
+        • Auto-detect each form type from filename &amp; content<br/>
+        • Cross-verify signatures, company names &amp; audit opinion<br/>
+        • Auto-update filing statuses and generate an Intelligence Report
+      </div>
+      <div
+        onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
+        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+        onDragLeave={()=>setDragOver(false)}
+        onClick={()=>!loading&&inputRef.current?.click()}
+        style={{border:`2px dashed ${dragOver?"#00b4a6":"#cbd5e1"}`,borderRadius:10,padding:"28px 20px",textAlign:"center",cursor:"pointer",background:dragOver?"#f0fdfa":"#f8fafc",transition:".16s",marginBottom:10}}>
+        {loading
+          ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"#64748b"}}>Analysing PDFs…</div></div>
+          :<><div style={{fontSize:32,marginBottom:8}}>📁</div>
+            <div style={{fontWeight:700,fontSize:12,color:"#334155"}}>Drop multiple PDFs here or click to browse</div>
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>AOC-4, Auditor's Report, AOC-2, Board's Report — all at once</div>
+          </>}
+      </div>
+      <input ref={inputRef} type="file" accept=".pdf" multiple style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+      {queued.length>0&&(
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",marginBottom:6}}>{queued.length} file(s) queued</div>
+          {queued.map((f,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 9px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:6,marginBottom:4,fontSize:10,color:"#334155"}}>
+              <span style={{fontSize:14}}>📋</span>
+              <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+              <span style={{fontSize:9,color:"#94a3b8"}}>{(f.size/1024).toFixed(0)} KB</span>
+            </div>
+          ))}
+          {!loading&&(
+            <button className="btn pri" style={{width:"100%",marginTop:8,padding:"9px"}} onClick={()=>onMulti(queued)}>
+              🚀 Analyse &amp; Upload All
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UploadModal({mode,setMode,onMds,onPdf,onMulti,loading,err,onClose}) {
   const mdsRef=useRef(); const pdfRef=useRef();
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&!loading&&onClose()}>
-      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:16,padding:"24px",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
+      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:16,padding:"24px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
           <div>
             <div style={{fontSize:15,fontWeight:700,color:"#0d2d4a"}}>Upload Company Data</div>
-            <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>MDS Excel · AOC-4 PDF · MGT-7/7A PDF</div>
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>MDS Excel · Batch PDF (AOC-4 cluster) · Single PDF</div>
           </div>
           {!loading&&<button className="btn" onClick={onClose}>✕</button>}
         </div>
         <div style={{display:"flex",gap:4,marginBottom:18,background:"#f8fafc",borderRadius:9,padding:4,border:"1px solid #e2e8f0"}}>
-          {[["mds","📊 MDS Excel"],["aoc4","📋 AOC-4"],["mgt7","📋 MGT-7/7A"]].map(([k,l])=>(
+          {[["mds","📊 MDS Excel"],["multi","📁 Batch PDFs"],["aoc4","📋 AOC-4"],["mgt7","📋 MGT-7/7A"]].map(([k,l])=>(
             <button key={k} onClick={()=>!loading&&setMode(k)} style={{flex:1,padding:"7px 0",borderRadius:6,border:"none",background:mode===k?"linear-gradient(135deg,#1a5f8a,#0d2d4a)":"transparent",color:mode===k?"#fff":"#94a3b8",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>{l}</button>
           ))}
         </div>
@@ -555,6 +1090,9 @@ function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
             <input ref={mdsRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>onMds(e.target.files[0])}/>
             <DropZone icon="📊" label="Drop MDS Excel here or click" sub=".xlsx / .xls" loading={loading} loadingText="Parsing MDS..." onClick={()=>!loading&&mdsRef.current?.click()}/>
           </div>
+        )}
+        {mode==="multi"&&(
+          <BatchUploadTab onMulti={onMulti} loading={loading}/>
         )}
         {(mode==="aoc4"||mode==="mgt7")&&(
           <div>
@@ -725,6 +1263,258 @@ Please file on time to avoid penalties.
   );
 }
 
+// ── Filing Intelligence Panel ─────────────────────────────────────────────────
+function FilingIntelligencePanel({data, company, onClose, onUpdateStatus}) {
+  if (!data) return null;
+  const {intelligence, crossIssues, parsedDocs} = data;
+  const allAlerts   = [...(intelligence?.alerts||[]), ...(crossIssues||[])];
+  const advice      = intelligence?.advice||[];
+  const autoUpdates = intelligence?.autoUpdates||{};
+  const masterDiffs = intelligence?.masterDiffs||[];
+
+  const levelStyle = (l) => ({
+    critical: {bg:"#fef2f2", bd:"#fecaca", icon:"🔴", col:"#dc2626"},
+    warning:  {bg:"#fffbeb", bd:"#fde68a", icon:"⚠️",  col:"#d97706"},
+    info:     {bg:"#eff6ff", bd:"#bfdbfe", icon:"ℹ️",  col:"#1a5f8a"},
+    success:  {bg:"#f0fdf4", bd:"#bbf7d0", icon:"✅", col:"#16a34a"},
+  }[l]||{bg:"#f8fafc",bd:"#e2e8f0",icon:"•",col:"#64748b"});
+
+  const FORM_LABELS = {aoc4:"AOC-4",adt1:"ADT-1",mgt7:"MGT-7",mgt7a:"MGT-7A",mgt14:"MGT-14",dir3k:"DIR-3 KYC",msme1:"MSME-1",dpt3:"DPT-3"};
+
+  // Group alerts by severity for display ordering
+  const criticals = allAlerts.filter(a => a.level === "critical");
+  const warnings  = allAlerts.filter(a => a.level === "warning");
+  const infos     = allAlerts.filter(a => a.level === "info");
+  const successes = allAlerts.filter(a => a.level === "success");
+  const ordered   = [...criticals, ...warnings, ...infos, ...successes];
+
+  // Separate auditor report parsed doc for display
+  const audRptDoc = (parsedDocs||[]).find(d => d.type === "auditor_report");
+  const aoc2Doc   = (parsedDocs||[]).find(d => d.type === "aoc2");
+  const aoc4Doc   = (parsedDocs||[]).find(d => d.type === "aoc4");
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.6)",zIndex:400,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 16px",backdropFilter:"blur(4px)",overflowY:"auto"}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:16,padding:"0",width:"100%",maxWidth:720,boxShadow:"0 32px 80px rgba(13,45,74,.22)",marginTop:20,marginBottom:20,overflow:"hidden"}} className="up">
+
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg,#0d2d4a,#1a5f8a)",padding:"18px 22px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>📊 Filing Intelligence Report</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.55)",marginTop:2}}>{company?.companyName||""} · {parsedDocs?.length||0} document(s) analysed</div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {criticals.length>0&&<span style={{background:"#dc2626",color:"#fff",borderRadius:5,padding:"2px 8px",fontSize:9,fontWeight:700}}>{criticals.length} CRITICAL</span>}
+            {warnings.length>0&&<span style={{background:"#d97706",color:"#fff",borderRadius:5,padding:"2px 8px",fontSize:9,fontWeight:700}}>{warnings.length} WARN</span>}
+            <button className="btn" style={{padding:"5px 12px",color:"#fff",borderColor:"rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)"}} onClick={onClose}>✕ Close</button>
+          </div>
+        </div>
+
+        <div style={{padding:"18px 22px",maxHeight:"80vh",overflowY:"auto"}}>
+
+          {/* ── 1. Documents Uploaded & Sign Status ── */}
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+              Documents Uploaded & Signature Verification
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:7}}>
+              {(parsedDocs||[]).map((doc,i)=>{
+                const si     = doc.signInfo;
+                const status = si?.signStatus;
+                const bk     = status==="signed"?"#f0fdf4":status==="draft"?"#fef2f2":"#fffbeb";
+                const bd     = status==="signed"?"#bbf7d0":status==="draft"?"#fecaca":"#fde68a";
+                const col    = status==="signed"?"#16a34a":status==="draft"?"#dc2626":"#d97706";
+                const icon   = status==="signed"?"✓":status==="draft"?"✗":"?";
+                const label  = {aoc4:"AOC-4",auditor_report:"Auditor's Report",board_report:"Board's Report",aoc2:"AOC-2",mgt7:"MGT-7",mgt7a:"MGT-7A"}[doc.type]||doc.type;
+                const statusLabel = status==="signed"?"MCA signed copy":status==="draft"?"UNSIGNED/DRAFT":"Unverified";
+                return (
+                  <div key={i} style={{background:bk,border:`1.5px solid ${bd}`,borderRadius:9,padding:"9px 11px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+                      <span style={{fontWeight:800,fontSize:12,color:col}}>{icon}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:col}}>{label}</span>
+                    </div>
+                    <div style={{fontSize:9,color:"#64748b",marginBottom:4,wordBreak:"break-all"}}>{doc.fileName?.slice(0,30)||""}</div>
+                    <div style={{fontSize:9,fontWeight:700,color:col,background:col+"18",padding:"2px 6px",borderRadius:4,display:"inline-block",marginBottom:4}}>{statusLabel}</div>
+                    {si?.signingIndicators?.slice(0,3).map((s,j)=>(
+                      <div key={j} style={{fontSize:8,color:s.startsWith("✓")?"#16a34a":s.startsWith("⚠")?"#d97706":"#94a3b8",marginTop:1,lineHeight:1.4}}>{s}</div>
+                    ))}
+                    {doc.companyName&&<div style={{fontSize:8,color:"#64748b",marginTop:3,borderTop:"1px solid "+bd+"80",paddingTop:3}}>{doc.companyName}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── 2. Auditor Report Details (if present) ── */}
+          {audRptDoc&&(
+            <div style={{marginBottom:18,background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#1a5f8a",marginBottom:8}}>📋 Auditor's Report — Key Findings</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:7}}>
+                {[
+                  ["Audit Opinion",    audRptDoc.auditOpinion,      audRptDoc.auditOpinion==="Unqualified (Clean)"?"#16a34a":"#dc2626"],
+                  ["Qualifications",   audRptDoc.qualificationsCount===0?"None":audRptDoc.qualificationsCount+" found", audRptDoc.qualificationsCount===0?"#16a34a":"#dc2626"],
+                  ["CARO",             `Not applicable (${audRptDoc.caroApplicable==="No"?"Small Co":"Applicable"})`, "#64748b"],
+                  ["IFC Audit",        audRptDoc.ifcApplicability||"-",   audRptDoc.ifcApplicability==="Exempted"?"#0d7a70":"#334155"],
+                  ["Emphasis",         audRptDoc.emphasisOfMatter||"-",   audRptDoc.emphasisOfMatter==="None"?"#16a34a":"#d97706"],
+                  ["Going Concern",    audRptDoc.goingConcern||"-",       "#64748b"],
+                  ["Signed By",        audRptDoc.signerName||audRptDoc.signerDIN||"-", "#334155"],
+                ].map(([l,v,col])=>(
+                  <div key={l} style={{background:"#fff",borderRadius:7,padding:"7px 9px",border:"1px solid #bfdbfe"}}>
+                    <div style={{fontSize:8,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".4px",marginBottom:2}}>{l}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:col||"#334155"}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 3. AOC-2 RPT Details (if present) ── */}
+          {aoc2Doc&&(aoc2Doc.armLengthCount>0||aoc2Doc.nonArmLengthCount>0)&&(
+            <div style={{marginBottom:18,background:"#fdf4ff",border:"1.5px solid #e9d5ff",borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#7c3aed",marginBottom:8}}>🤝 AOC-2 — Related Party Transactions</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:7,marginBottom:8}}>
+                {[
+                  ["Non-Arm's Length",  aoc2Doc.nonArmLengthCount===0?"None":aoc2Doc.nonArmLengthCount+" transactions", aoc2Doc.nonArmLengthCount===0?"#16a34a":"#dc2626"],
+                  ["Arm's Length (Material)", aoc2Doc.armLengthCount>0?aoc2Doc.armLengthCount+" transaction(s)":"None", "#7c3aed"],
+                ].map(([l,v,col])=>(
+                  <div key={l} style={{background:"#fff",borderRadius:7,padding:"7px 9px",border:"1px solid #e9d5ff"}}>
+                    <div style={{fontSize:8,fontWeight:700,color:"#a78bfa",textTransform:"uppercase",letterSpacing:".4px",marginBottom:2}}>{l}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:col}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              {aoc2Doc.rptBlocks?.filter(b=>b.name).map((b,i)=>(
+                <div key={i} style={{background:"#fff",borderRadius:7,padding:"9px 11px",border:"1px solid #e9d5ff",marginBottom:5}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:"#7c3aed"}}>{b.name}</div>
+                      <div style={{fontSize:9,color:"#64748b",marginTop:1}}>{b.relNature} · {b.txnNature}</div>
+                    </div>
+                    {b.amount>0&&<div style={{fontSize:11,fontWeight:700,color:"#334155",fontFamily:"IBM Plex Mono,monospace",flexShrink:0}}>₹{b.amount.toLocaleString("en-IN")}</div>}
+                  </div>
+                  <div style={{display:"flex",gap:10,marginTop:5,fontSize:9,color:"#94a3b8"}}>
+                    {b.pan&&<span>PAN: <span style={{color:"#1a5f8a",fontFamily:"monospace"}}>{b.pan}</span></span>}
+                    {b.boardDate&&<span>Board Approval: <strong style={{color:"#334155"}}>{b.boardDate}</strong></span>}
+                    {b.advances>0&&<span>Advances: ₹{b.advances.toLocaleString()}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── 4. Verification & Compliance Alerts ── */}
+          {ordered.length>0&&(
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+                Verification & Compliance Alerts ({ordered.length})
+              </div>
+              {ordered.map((a,i)=>{
+                const s = levelStyle(a.level);
+                return (
+                  <div key={i} style={{background:s.bg,border:`1px solid ${s.bd}`,borderRadius:8,padding:"8px 12px",marginBottom:5,display:"flex",gap:8,alignItems:"flex-start"}}>
+                    <span style={{fontSize:14,marginTop:1,flexShrink:0}}>{s.icon}</span>
+                    <span style={{fontSize:11,color:s.col,lineHeight:1.5}}>{a.msg}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── 5. Master Data Mismatch ── */}
+          {masterDiffs.length>0&&(
+            <div style={{marginBottom:18,background:"#fffbeb",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#d97706",marginBottom:8}}>⚠ Master Data Mismatch — Update Required</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                <thead>
+                  <tr style={{borderBottom:"1.5px solid #fde68a"}}>
+                    {["Field","PDF Value","Master Data Value","Action"].map(h=>(
+                      <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:9,fontWeight:700,color:"#d97706",textTransform:"uppercase"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {masterDiffs.map((d,i)=>(
+                    <tr key={i} style={{borderBottom:i<masterDiffs.length-1?"1px solid #fde68a50":"none"}}>
+                      <td style={{padding:"6px 8px",fontWeight:700,color:"#0d2d4a"}}>{d.field}</td>
+                      <td style={{padding:"6px 8px",color:"#1a5f8a",fontFamily:"IBM Plex Mono,monospace",fontSize:9}}>{d.pdfVal}</td>
+                      <td style={{padding:"6px 8px",color:"#dc2626",fontFamily:"IBM Plex Mono,monospace",fontSize:9}}>{d.masterVal}</td>
+                      <td style={{padding:"6px 8px",fontSize:9,color:"#d97706",fontStyle:"italic"}}>Update master data</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ── 6. Auto-Updated Filing Statuses ── */}
+          {Object.keys(autoUpdates).length>0&&(
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+                Auto-Updated Statuses from PDFs
+              </div>
+              {Object.entries(autoUpdates).map(([ruleId,st])=>(
+                <div key={ruleId} style={{background:st.status==="filed"?"#f0fdf4":"#fffbeb",border:`1px solid ${st.status==="filed"?"#bbf7d0":"#fde68a"}`,borderRadius:8,padding:"8px 12px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <span style={{fontFamily:"IBM Plex Mono,monospace",fontWeight:700,color:"#1a5f8a",fontSize:11}}>{FORM_LABELS[ruleId]||ruleId}</span>
+                    <span style={{fontSize:9,color:"#64748b",marginLeft:8}}>SRN: {st.srn||"—"}</span>
+                    {st.notes&&<div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>{st.notes}</div>}
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,color:st.status==="filed"?"#16a34a":"#d97706",background:st.status==="filed"?"#dcfce7":"#fffbeb",padding:"2px 8px",borderRadius:5,border:`1px solid ${st.status==="filed"?"#bbf7d0":"#fde68a"}`}}>
+                    {st.status==="filed"?"FILED ✓":"PENDING"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── 7. Future Filing Recommendations ── */}
+          {advice.length>0&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>
+                Next Filing Recommendations ({advice.length})
+              </div>
+              <div style={{borderRadius:9,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead>
+                    <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                      {["Form","Due Date","Priority","Note"].map(h=>(
+                        <th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".4px"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {advice.map((a,i)=>{
+                      const priBg  = a.priority==="HIGH"?"#fef2f2":a.priority==="MEDIUM"?"#fffbeb":"#f8fafc";
+                      const priCol = a.priority==="HIGH"?"#dc2626":a.priority==="MEDIUM"?"#d97706":"#64748b";
+                      return (
+                        <tr key={i} className="row" style={{borderBottom:i<advice.length-1?"1px solid #f1f5f9":"none"}}>
+                          <td style={{padding:"8px 10px",fontFamily:"IBM Plex Mono,monospace",fontWeight:700,color:"#1a5f8a",fontSize:10}}>{a.form}</td>
+                          <td style={{padding:"8px 10px",color:"#334155",fontWeight:500}}>{a.due}</td>
+                          <td style={{padding:"8px 10px"}}>
+                            <span style={{fontSize:9,fontWeight:700,color:priCol,background:priBg,padding:"2px 8px",borderRadius:5,border:`1px solid ${priCol}30`}}>{a.priority}</span>
+                          </td>
+                          <td style={{padding:"8px 10px",color:"#64748b",fontSize:10}}>{a.note}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div style={{marginTop:18,textAlign:"center"}}>
+            <button className="btn teal" style={{fontSize:11,padding:"8px 24px"}} onClick={onClose}>
+              ✓ Got it — View Compliance Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── AGM Cluster Banner (new component) ───────────────────────────────────────
 function AGMClusterBanner({company, applicable, onEdit}) {
   const clusterRules = applicable.filter(r=>AGM_CLUSTER_IDS.includes(r.id));
@@ -783,6 +1573,8 @@ export default function App() {
   const [selAY,         setSelAY]         = useState(DEFAULT_AY);
   const [reminderModal, setReminderModal] = useState(null);
   const [reminderLog,   setReminderLog]   = useState([]);
+  const [filingIntelligence, setFilingIntelligence] = useState(null); // {cin, intelligence, crossIssues, parsedDocs}
+  const [showIntelPanel, setShowIntelPanel] = useState(false);
 
   const ayOption = useMemo(()=>AY_OPTIONS.find(a=>a.value===selAY)||AY_OPTIONS[2],[selAY]);
   const calcDue  = (rule, co) => calcDueDates(rule, co, ayOption);
@@ -825,6 +1617,33 @@ export default function App() {
     }, 10000);
     if (!res.ok) throw new Error(`Update failed: ${res.status}`);
     await fetchCompanies();
+  };
+
+  const saveDocumentAnalysis = async (cin, parsedDocs, intelligence, crossIssues) => {
+    try {
+      await fetchWithTimeout(`${API_BASE}/document-analysis/${cin}`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          documents: parsedDocs.map(p => ({
+            type: p.type, fileName: p.fileName, srn: p.srn||"",
+            filingDate: p.filingDate||"", fyFrom: p.fyFrom||"", fyTo: p.fyTo||"",
+            companyName: p.companyName||"",
+            signInfo: p.signInfo || {},
+          })),
+          intelligence: {
+            alerts:      intelligence?.alerts||[],
+            advice:      intelligence?.advice||[],
+            autoUpdates: intelligence?.autoUpdates||{},
+            masterDiffs: intelligence?.masterDiffs||[],
+          },
+          crossIssues: crossIssues||[],
+          parsedAt: new Date().toISOString(),
+        }),
+      }, 10000);
+    } catch (e) {
+      console.warn("saveDocumentAnalysis failed (non-critical):", e.message);
+    }
   };
 
   const deleteCompany = async (cin) => {
@@ -909,30 +1728,219 @@ export default function App() {
     setUploading(false);
   };
 
+  // ── Smart multi-form PDF handler ────────────────────────────────────────────
   const handlePDF = async (file, type) => {
     if (!file?.name.match(/\.pdf$/i)) { setUploadErr("Upload a valid .pdf file"); return; }
     setUploading(true); setUploadErr("");
     try {
       const txt = await extractPdfText(file);
-      const p   = type==="aoc4" ? parseAOC4(txt, file.name) : parseMGT7(txt, file.name);
-      if (!p.cin) { setUploadErr("CIN not found. Ensure this is a text-based MCA eForm PDF."); setUploading(false); return; }
-      const ex = db.companies[p.cin] || {cin:p.cin, filingStatus:{}, documents:[], hasCharges:false, listedStatus:"Unlisted", companyStatus:"Active"};
-      const autoFiled = {
-        ...(type==="mgt7"&&p.srn?{[p.isSmallCompany==="Yes"?"mgt7a":"mgt7"]:{status:"filed",srn:p.srn,filedDate:p.filingDate,notes:"Auto-imported from PDF"}}:{}),
-        ...(type==="aoc4"&&p.srn?{aoc4:{status:"filed",srn:p.srn,filedDate:p.filingDate,notes:"Auto-imported from PDF"}}:{}),
+      const p   = parseAnyPDF(txt, file.name);
+
+      // If type forced (from upload mode button), override detection
+      const resolvedType = type && type!=="auto" ? type : p.type;
+
+      if (resolvedType === "unknown") {
+        setUploadErr("Could not identify form type. Upload a valid MCA eForm PDF (AOC-4, MGT-7/7A, Auditor Report, Board Report, AOC-2).");
+        setUploading(false); return;
+      }
+
+      if (!p.cin && resolvedType==="aoc4") {
+        setUploadErr("CIN not found in PDF. Ensure this is a text-based (not scanned) MCA eForm PDF.");
+        setUploading(false); return;
+      }
+
+      const cin = p.cin || (db && Object.keys(db.companies||{}).find(c=>db.companies[c].companyName===p.companyName));
+      if (!cin) {
+        setUploadErr(`CIN not found in ${file.name}. This form will be stored under the current company.`);
+      }
+
+      const targetCin = cin || selCin;
+      if (!targetCin) { setUploadErr("Cannot identify company. Upload an AOC-4 or MDS first."); setUploading(false); return; }
+
+      const ex = (db?.companies||{})[targetCin] || {cin:targetCin, filingStatus:{}, documents:[], hasCharges:false, listedStatus:"Unlisted", companyStatus:"Active"};
+
+      // Build document record
+      const docRecord = {
+        type: resolvedType,
+        form: {aoc4:"AOC-4", auditor_report:"Auditor Report (Standalone)", board_report:"Board Report Extract", aoc2:"AOC-2", mgt7:"MGT-7", mgt7a:"MGT-7A"}[resolvedType]||resolvedType,
+        srn: p.srn||"",
+        filingDate: p.filingDate||"",
+        fyFrom: p.fyFrom||"", fyTo: p.fyTo||"",
+        fileName: file.name,
+        auditor: p.auditor||"",
+        signInfo: p.signInfo||null,
+        parsedAt: new Date().toISOString(),
+        // extra parsed fields stored on doc
+        extra: resolvedType==="aoc4" ? {
+          boardMeetingFS:p.boardMeetingFS, boardMeetingBR:p.boardMeetingBR,
+          auditorSignDate:p.auditorSignDate, adtSRN:p.adtSRN,
+          netLoss:p.lossForYear, netWorth:p.netWorthAbsolute,
+          revenue:p.revenueAbsolute, epsBasic:p.epsBasic,
+          directors:p.directors,
+        } : resolvedType==="auditor_report" ? {
+          opinion:p.auditOpinion, qualifications:p.qualificationsCount, caro:p.caroApplicable
+        } : resolvedType==="board_report" ? {
+          boardMeetings:p.boardMeetingsHeld, fraud:p.fraudReported, csr:p.csrApplicable
+        } : resolvedType==="aoc2" ? {
+          nonArm:p.nonArmLengthCount, arm:p.armLengthCount,
+          rptName:p.relatedPartyName, rptAmount:p.relatedPartyAmount
+        } : {},
       };
+
+      // Compute filing intelligence (only for AOC-4)
+      let autoFiled = {};
+      let intelligence = null;
+      if (resolvedType === "aoc4") {
+        intelligence = computeFilingIntelligence(p, ex, null, null);
+        autoFiled = intelligence.autoUpdates || {};
+        // Also auto-update company master fields from AOC-4
+        Object.assign(ex, {
+          companyName: p.companyName||ex.companyName,
+          lastAGM: p.lastAGM||ex.lastAGM,
+          isSmallCompany: p.isSmallCompany||ex.isSmallCompany||"No",
+          companyType: p.companyType||ex.companyType||"Private",
+          ...(p.turnover?{turnover:p.turnover}:{}),
+          ...(p.networth?{networth:p.networth}:{}),
+          ...(p.paidUpCapital?{paidUpCapital:p.paidUpCapital}:{}),
+          ...(p.authorisedCapital?{authorisedCapital:p.authorisedCapital}:{}),
+          ...(p.directors?.length?{directors:p.directors}:{}),
+        });
+      } else if (resolvedType === "mgt7" || resolvedType === "mgt7a") {
+        if (p.srn) {
+          const mgtId = p.isSmallCompany==="Yes" ? "mgt7a" : "mgt7";
+          autoFiled[mgtId] = {status:"filed", srn:p.srn, filedDate:p.filingDate, notes:"Auto-imported from MGT-7/7A PDF"};
+        }
+      }
+
+      // Merge filing statuses for auto-updates
+      const newFilingStatus = {...(ex.filingStatus||{})};
+      Object.entries(autoFiled).forEach(([ruleId, statusData]) => {
+        // Only auto-update if not already manually set to "filed"
+        if (!(ex.filingStatus||{})[ruleId]?.status === "filed") {
+          newFilingStatus[ruleId] = statusData;
+        } else {
+          newFilingStatus[ruleId] = {...(ex.filingStatus[ruleId]||{}), ...statusData};
+        }
+      });
+
+      // Build updated company record
       const updated = {
-        ...ex, cin:p.cin, companyName:p.companyName||ex.companyName, lastAGM:p.lastAGM||ex.lastAGM,
-        isSmallCompany:p.isSmallCompany||ex.isSmallCompany||"No", companyType:p.companyType||ex.companyType||"Private",
-        ...(p.turnover?{turnover:p.turnover}:{}), ...(p.networth?{networth:p.networth}:{}),
-        ...(p.paidUpCapital?{paidUpCapital:p.paidUpCapital}:{}), ...(p.directors?.length?{directors:p.directors}:{}),
-        updatedAt:new Date().toISOString(),
-        documents:[...(ex.documents||[]).filter(d=>d.srn!==p.srn), {type:p.type, form:type==="aoc4"?"AOC-4":"MGT-7/MGT-7A", srn:p.srn, filingDate:p.filingDate, fyFrom:p.fyFrom, fyTo:p.fyTo||"", fileName:file.name, auditor:p.auditor||""}],
-        filingStatus:{...(ex.filingStatus||{}), ...autoFiled},
+        ...ex, cin:targetCin,
+        updatedAt: new Date().toISOString(),
+        documents: [...(ex.documents||[]).filter(d => !(d.srn && d.srn===p.srn && d.type===resolvedType)), docRecord],
+        filingStatus: newFilingStatus,
+      };
+
+      await saveCompanyToBackend(updated);
+
+      // Store intelligence in state for display
+      if (intelligence) {
+        setFilingIntelligence({cin:targetCin, intelligence, crossIssues:[], parsedDocs:[p]});
+      }
+
+      setShowUpload(false);
+      setSelCin(targetCin);
+      setScreen("company");
+      setTab("compliances");
+
+    } catch(e) { setUploadErr("Failed: "+e.message); console.error(e); }
+    setUploading(false);
+  };
+
+  // ── Multi-PDF batch upload (multiple forms at once) ───────────────────────
+  const handleMultiPDF = async (files) => {
+    if (!files?.length) return;
+    setUploading(true); setUploadErr("");
+    const parsedDocs = [];
+    try {
+      for (const file of files) {
+        const txt = await extractPdfText(file);
+        const p = parseAnyPDF(txt, file.name);
+        parsedDocs.push(p);
+      }
+
+      // Find AOC-4 to anchor the company
+      const aoc4 = parsedDocs.find(d=>d.type==="aoc4");
+      const targetCin = aoc4?.cin || selCin;
+      if (!targetCin) { setUploadErr("Upload includes no AOC-4. Cannot identify company."); setUploading(false); return; }
+
+      const ex = (db?.companies||{})[targetCin] || {cin:targetCin, filingStatus:{}, documents:[], hasCharges:false, listedStatus:"Unlisted", companyStatus:"Active"};
+
+      // Cross-verify all docs
+      const crossIssues = crossVerifyDocuments(parsedDocs);
+
+      let autoFiled = {};
+      let intelligence = null;
+      if (aoc4) {
+        const audRptDoc = parsedDocs.find(d => d.type === "auditor_report");
+        const aoc2Doc   = parsedDocs.find(d => d.type === "aoc2");
+        intelligence = computeFilingIntelligence(aoc4, ex, audRptDoc, aoc2Doc);
+        autoFiled = intelligence.autoUpdates || {};
+        Object.assign(ex, {
+          companyName: aoc4.companyName||ex.companyName,
+          lastAGM: aoc4.lastAGM||ex.lastAGM,
+          isSmallCompany: aoc4.isSmallCompany||ex.isSmallCompany||"No",
+          companyType: aoc4.companyType||ex.companyType||"Private",
+          ...(aoc4.turnover?{turnover:aoc4.turnover}:{}),
+          ...(aoc4.networth?{networth:aoc4.networth}:{}),
+          ...(aoc4.paidUpCapital?{paidUpCapital:aoc4.paidUpCapital}:{}),
+          ...(aoc4.directors?.length?{directors:aoc4.directors}:{}),
+        });
+      }
+
+      // Merge documents (deduplicate by type+srn)
+      const newDocs = [...(ex.documents||[])];
+      parsedDocs.forEach(p => {
+        const formLabel = {aoc4:"AOC-4",auditor_report:"Auditor Report (Standalone)",board_report:"Board Report Extract",aoc2:"AOC-2",mgt7:"MGT-7",mgt7a:"MGT-7A"}[p.type]||p.type;
+        const rec = {
+          type:p.type, form:formLabel, srn:p.srn||"", filingDate:p.filingDate||"",
+          fyFrom:p.fyFrom||"", fyTo:p.fyTo||"", fileName:p.fileName,
+          signInfo:p.signInfo, parsedAt:new Date().toISOString(),
+          extra: p.type==="aoc4" ? {
+            boardMeetingFS:p.boardMeetingFS, boardMeetingBR:p.boardMeetingBR,
+            auditorSignDate:p.auditorSignDate, adtSRN:p.adtSRN,
+            netLoss:p.netLossAbsolute, netWorth:p.netWorthAbsolute,
+            revenue:p.revenueAbsolute, epsBasic:p.epsBasic, directors:p.directors,
+            authorisedCapital:p.authorisedCapitalAbsolute, shareCapital:p.shareCapitalAbsolute,
+            reserves:p.reservesAbsolute, ltBorrowings:p.ltBorrowingsAbsolute,
+            tradePayables:p.tradePayablesAbsolute, cash:p.cashAbsolute,
+            totalIncome:p.totalIncomeAbsolute, totalExpenses:p.totalExpensesAbsolute,
+          } : p.type==="auditor_report" ? {
+            opinion:p.auditOpinion, qualifications:p.qualificationsCount, caro:p.caroApplicable,
+            emphasis:p.emphasisOfMatter, signerDIN:p.signerDIN, signerName:p.signerName,
+            ifc:p.ifcApplicability, goingConcern:p.goingConcern,
+          } : p.type==="board_report" ? {
+            boardMeetings:p.boardMeetingsHeld, fraud:p.fraudReported,
+            csr:p.csrApplicable, secretarialAudit:p.secretarialAuditApplicable,
+            lossForYear:p.lossForYear, signerDIN:p.signerDIN,
+          } : p.type==="aoc2" ? {
+            nonArm:p.nonArmLengthCount, arm:p.armLengthCount,
+            rptName:p.relatedPartyName, rptAmount:p.relatedPartyAmount,
+            rptRelationship:p.relatedPartyRelationship,
+            rptBoardDate:p.relatedPartyBoardApproval,
+            rptBlocks:p.rptBlocks,
+          } : {},
+        };
+        const idx = newDocs.findIndex(d=>d.type===p.type && (p.srn ? d.srn===p.srn : d.fileName===p.fileName));
+        if (idx >= 0) newDocs[idx] = rec; else newDocs.push(rec);
+      });
+
+      const newFilingStatus = {...(ex.filingStatus||{})};
+      Object.entries(autoFiled).forEach(([ruleId, statusData]) => {
+        newFilingStatus[ruleId] = {...(newFilingStatus[ruleId]||{}), ...statusData};
+      });
+
+      const updated = {
+        ...ex, cin:targetCin, updatedAt:new Date().toISOString(),
+        documents:newDocs, filingStatus:newFilingStatus,
       };
       await saveCompanyToBackend(updated);
-      setShowUpload(false); setSelCin(p.cin); setScreen("company"); setTab("compliances");
-    } catch(e) { setUploadErr("Failed: "+e.message); }
+
+      setFilingIntelligence({cin:targetCin, intelligence, crossIssues, parsedDocs});
+      // Persist document analysis to backend (non-blocking)
+      saveDocumentAnalysis(targetCin, parsedDocs, intelligence, crossIssues);
+      setShowUpload(false); setSelCin(targetCin); setScreen("company"); setTab("compliances");
+    } catch(e) { setUploadErr("Failed: "+e.message); console.error(e); }
     setUploading(false);
   };
 
@@ -1136,6 +2144,9 @@ export default function App() {
                   <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mgt7");setUploadErr("");}}>+ MGT-7</button>
                   {/* ── EXPORT BUTTON (new) ── */}
                   <button className="btn teal" onClick={()=>exportReport(company, applicable, selAY, calcDue)}>⬇ Export Report</button>
+                  {filingIntelligence?.cin===company.cin&&(
+                    <button className="btn" style={{borderColor:"#bfdbfe",color:"#1a5f8a"}} onClick={()=>setShowIntelPanel(true)}>📊 Intel Report</button>
+                  )}
                   <button className="btn red" onClick={()=>setDelConfirm(company.cin)}>Remove</button>
                 </div>
               </div>
@@ -1297,21 +2308,49 @@ export default function App() {
                   <div style={{textAlign:"center",padding:"44px",color:"#94a3b8",fontSize:11,background:"#fff",borderRadius:12,border:"1px solid #e2e8f0"}}>No documents uploaded yet</div>
                 ):(
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {(company.documents||[]).map((doc,i)=>(
-                      <div key={i} className="card" style={{padding:"13px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-                        <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                          <div style={{width:38,height:38,borderRadius:9,background:doc.type==="aoc4"?"#eff6ff":"#f0fdfa",border:`1px solid ${doc.type==="aoc4"?"#bfdbfe":"#99f6e4"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
-                            {doc.type==="aoc4"?"📊":"📋"}
-                          </div>
-                          <div>
-                            <div style={{fontSize:11,fontWeight:700,color:"#1a5f8a"}}>{doc.form||doc.type.toUpperCase()} <span className="mono" style={{fontSize:10,color:"#94a3b8",fontWeight:400}}>{doc.srn}</span></div>
-                            <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{doc.fileName} · Filed: {doc.filingDate||"-"} · FY {doc.fyFrom?.slice(6)||"-"} – {doc.fyTo?.slice(6)||"-"}</div>
-                            {doc.auditor&&<div style={{fontSize:9,color:"#64748b",marginTop:1}}>Auditor: {doc.auditor}</div>}
+                    {(company.documents||[]).map((doc,i)=>{
+                      const si = doc.signInfo;
+                      const signStatus = si?.signStatus || (si?.isSignedCopy ? "signed" : si?.isDraft ? "draft" : "unknown");
+                      const signBg  = signStatus==="signed"?"#f0fdf4":signStatus==="draft"?"#fef2f2":"#fffbeb";
+                      const signBd  = signStatus==="signed"?"#bbf7d0":signStatus==="draft"?"#fecaca":"#fde68a";
+                      const signCol = signStatus==="signed"?"#16a34a":signStatus==="draft"?"#dc2626":"#d97706";
+                      const signLbl = signStatus==="signed"?"✓ Signed MCA copy":signStatus==="draft"?"✗ Unsigned/Draft":"? Unverified";
+                      return (
+                        <div key={i} className="card" style={{padding:"13px 16px"}}>
+                          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+                            <div style={{display:"flex",gap:12,alignItems:"flex-start",flex:1,minWidth:0}}>
+                              <div style={{width:38,height:38,borderRadius:9,background:doc.type==="aoc4"?"#eff6ff":doc.type==="auditor_report"?"#f0fdf4":doc.type==="aoc2"?"#fdf4ff":"#f0fdfa",border:`1px solid ${doc.type==="aoc4"?"#bfdbfe":doc.type==="auditor_report"?"#bbf7d0":doc.type==="aoc2"?"#e9d5ff":"#99f6e4"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>
+                                {doc.type==="aoc4"?"📊":doc.type==="auditor_report"?"🔍":doc.type==="aoc2"?"🤝":"📋"}
+                              </div>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:11,fontWeight:700,color:"#1a5f8a"}}>{doc.form||doc.type.toUpperCase()} <span className="mono" style={{fontSize:10,color:"#94a3b8",fontWeight:400}}>{doc.srn}</span></div>
+                                <div style={{fontSize:10,color:"#94a3b8",marginTop:2,wordBreak:"break-word"}}>{doc.fileName} · FY {doc.fyFrom?.slice(6)||"-"} – {doc.fyTo?.slice(6)||"-"}</div>
+                                {/* Auditor report specific extras */}
+                                {doc.type==="auditor_report"&&doc.extra&&(
+                                  <div style={{marginTop:5,display:"flex",gap:5,flexWrap:"wrap"}}>
+                                    <span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",fontSize:9}}>{doc.extra.opinion||"Opinion N/A"}</span>
+                                    <span className="bg" style={{background:"#eff6ff",color:"#1a5f8a",border:"1px solid #bfdbfe",fontSize:9}}>CARO: {doc.extra.caro||"N/A"}</span>
+                                    {doc.extra.qualifications===0&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",fontSize:9}}>No qualifications</span>}
+                                  </div>
+                                )}
+                                {/* AOC-2 specific extras */}
+                                {doc.type==="aoc2"&&doc.extra&&(
+                                  <div style={{marginTop:5,display:"flex",gap:5,flexWrap:"wrap"}}>
+                                    <span className="bg" style={{background:"#fdf4ff",color:"#7c3aed",border:"1px solid #e9d5ff",fontSize:9}}>Arm's length: {doc.extra.arm||0}</span>
+                                    {doc.extra.rptName&&<span className="bg" style={{background:"#f8fafc",color:"#64748b",border:"1px solid #e2e8f0",fontSize:9}}>{doc.extra.rptName}</span>}
+                                    {doc.extra.rptAmount>0&&<span className="bg" style={{background:"#f8fafc",color:"#334155",border:"1px solid #e2e8f0",fontSize:9}}>₹{doc.extra.rptAmount.toLocaleString()}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
+                              <span style={{fontSize:9,fontWeight:700,color:signCol,background:signBg,border:`1px solid ${signBd}`,padding:"2px 8px",borderRadius:5,whiteSpace:"nowrap"}}>{signLbl}</span>
+                              {doc.filingDate&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0",fontSize:9}}>Filed: {doc.filingDate}</span>}
+                            </div>
                           </div>
                         </div>
-                        {doc.filingDate&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0"}}>✓ {doc.filingDate}</span>}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1382,7 +2421,7 @@ export default function App() {
       {/* ══ MODALS ══════════════════════════════════════════════════════════════ */}
       {showUpload&&(
         <UploadModal mode={uploadMode} setMode={setUploadMode} onMds={handleMDS} onPdf={handlePDF}
-          loading={uploading} err={uploadErr} onClose={()=>!uploading&&setShowUpload(false)}/>
+          onMulti={handleMultiPDF} loading={uploading} err={uploadErr} onClose={()=>!uploading&&setShowUpload(false)}/>
       )}
 
       {editStatus&&(()=>{
