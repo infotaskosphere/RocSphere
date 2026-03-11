@@ -1,31 +1,39 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 
-// ⚠️ Replace with your actual Render backend URL
-const API_BASE = "https://rocsphere.onrender.com/api/roc";
+// ⚠️ Set this to your actual Render backend URL
+const API_BASE = "https://rocsphere.onrender.com/api";
+
+// Fetch with timeout — prevents infinite "Connecting to backend..." screen
+const fetchWithTimeout = (url, options = {}, ms = 8000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+};
 
 const TODAY = new Date();
 
 const COMPLIANCE_RULES = [
-  { id:"mgt7a", form:"MGT-7A", title:"Abridged Annual Return", cat:"Annual Filing", section:"Sec 92, Rule 11A", freq:"Annual", applies:(c)=>c.isSmallCompany==="Yes"||c.companyType==="OPC", tags:["Small Co/OPC"] },
-  { id:"mgt7", form:"MGT-7", title:"Annual Return", cat:"Annual Filing", section:"Sec 92", freq:"Annual", applies:(c)=>c.companyType!=="LLP"&&c.isSmallCompany!=="Yes", tags:["Non-Small Co"] },
-  { id:"aoc4", form:"AOC-4", title:"Financial Statements Filing", cat:"Annual Filing", section:"Sec 137", freq:"Annual", applies:(c)=>c.companyType!=="LLP", tags:["All Cos"] },
-  { id:"adt1", form:"ADT-1", title:"Appointment of Auditor", cat:"Annual Filing", section:"Sec 139", freq:"Annual/5yr", applies:(c)=>c.companyType!=="LLP", tags:["All Cos"] },
-  { id:"dpt3", form:"DPT-3", title:"Return of Deposits", cat:"Statutory Return", section:"Sec 73/Rule 16", freq:"Annual", applies:(c)=>c.companyType!=="LLP", tags:["Non-LLP"] },
-  { id:"msme1", form:"MSME-1", title:"Outstanding Dues to MSME", cat:"Statutory Return", section:"Sec 405", freq:"Half-yearly", applies:()=>true, tags:["All Cos"] },
-  { id:"dir12", form:"DIR-12", title:"Change in Directors / KMP", cat:"Director", section:"Sec 170", freq:"Event", applies:()=>true, tags:["All Cos"] },
-  { id:"dir3k", form:"DIR-3 KYC", title:"Director KYC (Annual)", cat:"Director", section:"Rule 12A", freq:"Annual", applies:()=>true, tags:["All Cos"] },
-  { id:"mgt14", form:"MGT-14", title:"Filing of Board Resolutions", cat:"Director", section:"Sec 117", freq:"Event", applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed", tags:["Public/Listed"] },
-  { id:"pas3", form:"PAS-3", title:"Return of Allotment", cat:"Share Capital", section:"Sec 39/42", freq:"Event", applies:()=>true, tags:["All Cos"] },
-  { id:"sh7", form:"SH-7", title:"Increase in Authorised Capital", cat:"Share Capital", section:"Sec 64", freq:"Event", applies:()=>true, tags:["All Cos"] },
-  { id:"inc22", form:"INC-22", title:"Change in Registered Office", cat:"Registered Office", section:"Sec 12", freq:"Event", applies:()=>true, tags:["All Cos"] },
-  { id:"xbrl", form:"AOC-4 XBRL", title:"XBRL Financial Statements", cat:"Annual Filing", section:"MCA XBRL Rules", freq:"Annual", applies:(c)=>c.listedStatus==="Listed"||+c.turnover>=500||+c.paidUpCapital>=500, tags:["Listed/Large"] },
-  { id:"csr", form:"CSR-1/CSR-2", title:"CSR Registration & Reporting", cat:"CSR", section:"Sec 135", freq:"Annual", applies:(c)=>+c.networth>=500||+c.turnover>=1000||+c.netProfit>=5, tags:["NW>=500/TO>=1000 Cr"] },
-  { id:"iepf", form:"IEPF-1/IEPF-2", title:"IEPF - Unpaid Dividend/Shares", cat:"Investor Protection", section:"Sec 125", freq:"Event", applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed", tags:["Public/Listed"] },
-  { id:"ben2", form:"BEN-2", title:"Significant Beneficial Ownership", cat:"Statutory Return", section:"Sec 90", freq:"Event", applies:(c)=>c.companyType!=="LLP", tags:["Non-LLP"] },
-  { id:"chg1", form:"CHG-1/CHG-4", title:"Registration / Satisfaction of Charge", cat:"Charges", section:"Sec 77/82", freq:"Event", applies:(c)=>c.hasCharges, tags:["Cos with Charges"] },
-  { id:"llp8", form:"Form 8 (LLP)", title:"Statement of Account & Solvency", cat:"Annual Filing", section:"LLP Act 2008", freq:"Annual", applies:(c)=>c.companyType==="LLP", tags:["LLP Only"] },
-  { id:"llp11", form:"Form 11 (LLP)", title:"Annual Return (LLP)", cat:"Annual Filing", section:"LLP Act 2008", freq:"Annual", applies:(c)=>c.companyType==="LLP", tags:["LLP Only"] },
+  { id:"mgt7a", form:"MGT-7A",        title:"Abridged Annual Return",                  cat:"Annual Filing",       section:"Sec 92, Rule 11A",  freq:"Annual",      applies:(c)=>c.isSmallCompany==="Yes"||c.companyType==="OPC",                                       tags:["Small Co/OPC"]        },
+  { id:"mgt7",  form:"MGT-7",         title:"Annual Return",                            cat:"Annual Filing",       section:"Sec 92",            freq:"Annual",      applies:(c)=>c.companyType!=="LLP"&&c.isSmallCompany!=="Yes",                                       tags:["Non-Small Co"]        },
+  { id:"aoc4",  form:"AOC-4",         title:"Financial Statements Filing",              cat:"Annual Filing",       section:"Sec 137",           freq:"Annual",      applies:(c)=>c.companyType!=="LLP",                                                                 tags:["All Cos"]             },
+  { id:"adt1",  form:"ADT-1",         title:"Appointment of Auditor",                   cat:"Annual Filing",       section:"Sec 139",           freq:"Annual/5yr",  applies:(c)=>c.companyType!=="LLP",                                                                 tags:["All Cos"]             },
+  { id:"dpt3",  form:"DPT-3",         title:"Return of Deposits",                       cat:"Statutory Return",    section:"Sec 73/Rule 16",    freq:"Annual",      applies:(c)=>c.companyType!=="LLP",                                                                 tags:["Non-LLP"]             },
+  { id:"msme1", form:"MSME-1",        title:"Outstanding Dues to MSME",                 cat:"Statutory Return",    section:"Sec 405",           freq:"Half-yearly", applies:()=>true,                                                                                   tags:["All Cos"]             },
+  { id:"dir12", form:"DIR-12",        title:"Change in Directors / KMP",                cat:"Director",            section:"Sec 170",           freq:"Event",       applies:()=>true,                                                                                   tags:["All Cos"]             },
+  { id:"dir3k", form:"DIR-3 KYC",     title:"Director KYC (Annual)",                    cat:"Director",            section:"Rule 12A",          freq:"Annual",      applies:()=>true,                                                                                   tags:["All Cos"]             },
+  { id:"mgt14", form:"MGT-14",        title:"Filing of Board Resolutions",              cat:"Director",            section:"Sec 117",           freq:"Event",       applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed",                                   tags:["Public/Listed"]       },
+  { id:"pas3",  form:"PAS-3",         title:"Return of Allotment",                      cat:"Share Capital",       section:"Sec 39/42",         freq:"Event",       applies:()=>true,                                                                                   tags:["All Cos"]             },
+  { id:"sh7",   form:"SH-7",          title:"Increase in Authorised Capital",           cat:"Share Capital",       section:"Sec 64",            freq:"Event",       applies:()=>true,                                                                                   tags:["All Cos"]             },
+  { id:"inc22", form:"INC-22",        title:"Change in Registered Office",              cat:"Registered Office",   section:"Sec 12",            freq:"Event",       applies:()=>true,                                                                                   tags:["All Cos"]             },
+  { id:"xbrl",  form:"AOC-4 XBRL",   title:"XBRL Financial Statements",               cat:"Annual Filing",       section:"MCA XBRL Rules",    freq:"Annual",      applies:(c)=>c.listedStatus==="Listed"||+c.turnover>=500||+c.paidUpCapital>=500,                    tags:["Listed/Large"]        },
+  { id:"csr",   form:"CSR-1/CSR-2",  title:"CSR Registration & Reporting",             cat:"CSR",                 section:"Sec 135",           freq:"Annual",      applies:(c)=>+c.networth>=500||+c.turnover>=1000||+c.netProfit>=5,                                  tags:["NW>=500/TO>=1000 Cr"] },
+  { id:"iepf",  form:"IEPF-1/IEPF-2",title:"IEPF - Unpaid Dividend/Shares",           cat:"Investor Protection", section:"Sec 125",           freq:"Event",       applies:(c)=>c.companyType==="Public"||c.listedStatus==="Listed",                                   tags:["Public/Listed"]       },
+  { id:"ben2",  form:"BEN-2",         title:"Significant Beneficial Ownership",         cat:"Statutory Return",    section:"Sec 90",            freq:"Event",       applies:(c)=>c.companyType!=="LLP",                                                                 tags:["Non-LLP"]             },
+  { id:"chg1",  form:"CHG-1/CHG-4",  title:"Registration / Satisfaction of Charge",   cat:"Charges",             section:"Sec 77/82",         freq:"Event",       applies:(c)=>c.hasCharges,                                                                          tags:["Cos with Charges"]    },
+  { id:"llp8",  form:"Form 8 (LLP)", title:"Statement of Account & Solvency",          cat:"Annual Filing",       section:"LLP Act 2008",      freq:"Annual",      applies:(c)=>c.companyType==="LLP",                                                                 tags:["LLP Only"]            },
+  { id:"llp11", form:"Form 11 (LLP)",title:"Annual Return (LLP)",                      cat:"Annual Filing",       section:"LLP Act 2008",      freq:"Annual",      applies:(c)=>c.companyType==="LLP",                                                                 tags:["LLP Only"]            },
 ];
 
 const CAT_COL = {
@@ -58,48 +66,49 @@ const calcDueDates = (rule, co) => {
   const y = TODAY.getFullYear();
   switch(rule.id) {
     case "mgt7": case "mgt7a":
-      if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm, 60)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)} (est.)`, date: new Date(y, 8, 29)});
-      slots.push({label:`FY ${y+1}-${String(y+2).slice(2)} (est.)`, date: new Date(y+1, 8, 29)});
+      if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm,60)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)} (est.)`, date: new Date(y,8,29)});
+      slots.push({label:`FY ${y+1}-${String(y+2).slice(2)} (est.)`, date: new Date(y+1,8,29)});
       break;
     case "aoc4":
-      if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm, 30)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)} (est.)`, date: new Date(y, 8, 30)});
-      slots.push({label:`FY ${y+1}-${String(y+2).slice(2)} (est.)`, date: new Date(y+1, 8, 30)});
+      if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm,30)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)} (est.)`, date: new Date(y,8,30)});
+      slots.push({label:`FY ${y+1}-${String(y+2).slice(2)} (est.)`, date: new Date(y+1,8,30)});
       break;
     case "adt1":
-      if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm, 15)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)} (est.)`, date: new Date(y, 8, 15)});
+      if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm,15)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)} (est.)`, date: new Date(y,8,15)});
       break;
     case "dpt3":
-      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y, 5, 30)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1, 5, 30)});
+      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y,5,30)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1,5,30)});
       break;
     case "msme1":
-      slots.push({label:`Apr-Sep ${y}`, date: new Date(y, 9, 31)});
-      slots.push({label:`Oct ${y}-Mar ${y+1}`, date: new Date(y+1, 3, 30)});
-      slots.push({label:`Apr-Sep ${y+1}`, date: new Date(y+1, 9, 31)});
+      slots.push({label:`Apr-Sep ${y}`,      date: new Date(y,9,31)});
+      slots.push({label:`Oct ${y}-Mar ${y+1}`, date: new Date(y+1,3,30)});
+      slots.push({label:`Apr-Sep ${y+1}`,    date: new Date(y+1,9,31)});
       break;
     case "dir3k":
-      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y, 8, 30)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1, 8, 30)});
+      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y,8,30)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1,8,30)});
       break;
     case "llp8":
-      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y, 8, 30)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1, 8, 30)});
+      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y,8,30)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1,8,30)});
       break;
     case "llp11":
-      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y, 4, 30)});
-      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1, 4, 30)});
+      slots.push({label:`FY ${y-1}-${String(y).slice(2)}`, date: new Date(y,4,30)});
+      slots.push({label:`FY ${y}-${String(y+1).slice(2)}`, date: new Date(y+1,4,30)});
       break;
     default:
-      slots.push({label:"Event-based", date: null});
+      slots.push({label:"Event-based", date:null});
   }
-  const upcoming = slots.filter(s => s.date && s.date >= TODAY).sort((a,b) => a.date - b.date)[0] || null;
-  const past = slots.filter(s => s.date && s.date < TODAY).sort((a,b) => b.date - a.date)[0] || null;
-  return { upcoming, past, all: slots };
+  const upcoming = slots.filter(s=>s.date&&s.date>=TODAY).sort((a,b)=>a.date-b.date)[0]||null;
+  const past     = slots.filter(s=>s.date&&s.date<TODAY).sort((a,b)=>b.date-a.date)[0]||null;
+  return { upcoming, past, all:slots };
 };
 
+// ── PDF helpers ───────────────────────────────────────────────────────────────
 const loadPdfJs = () => new Promise((res,rej) => {
   if (window.pdfjsLib) { res(window.pdfjsLib); return; }
   const s = document.createElement("script");
@@ -107,57 +116,52 @@ const loadPdfJs = () => new Promise((res,rej) => {
   s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); };
   s.onerror = rej; document.head.appendChild(s);
 });
-
 const extractPdfText = async (file) => {
   const lib = await loadPdfJs();
   const buf = await file.arrayBuffer();
   const pdf = await lib.getDocument({data:buf}).promise;
   let txt = "";
-  for (let i=1; i<=pdf.numPages; i++) {
+  for (let i=1;i<=pdf.numPages;i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    txt += content.items.map(x=>x.str).join(" ") + "\n";
+    txt += content.items.map(x=>x.str).join(" ")+"\n";
   }
   return txt;
 };
-
 const toC = (v) => v ? (v/10000000).toFixed(4) : "";
 
 const parseAOC4 = (txt, fileName) => {
-  const cin = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
-  const nm1 = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
-  const srn = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
-  const filingDate = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
-  const agmDate = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
-  const fyFrom = txt.match(/From\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
-  const fyTo = txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
-  const nwAbs = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
-  const toAbs = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1]||txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
-  const scAbs = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
-  const plAbs = parseInt(txt.match(/Profit\s*\/?\s*\(Loss\).*?\(XI.*?XIV\).*?(-?\d+)/)?.[1]||"0")||0;
-  const auditor = (txt.match(/Name of the auditor.*?firm\s+([A-Z][A-Z\s&.]+)/i)?.[1]||"").replace(/\s+/g," ").trim();
+  const cin       = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
+  const nm1       = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
+  const srn       = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
+  const filingDate= txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const agmDate   = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const fyFrom    = txt.match(/From\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
+  const fyTo      = txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
+  const nwAbs     = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
+  const toAbs     = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1]||txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
+  const scAbs     = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
+  const auditor   = (txt.match(/Name of the auditor.*?firm\s+([A-Z][A-Z\s&.]+)/i)?.[1]||"").replace(/\s+/g," ").trim();
   return { type:"aoc4", fileName, cin, companyName:nm1.replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom, fyTo,
-    turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, shareCapital:scAbs, netLoss:plAbs, auditor,
+    turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, shareCapital:scAbs, auditor,
     turnover:toC(toAbs), networth:toC(nwAbs), paidUpCapital:toC(scAbs) };
 };
-
 const parseMGT7 = (txt, fileName) => {
-  const cin = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
-  const nm1 = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
-  const srn = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
-  const filingDate = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
-  const agmDate = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
-  const fyFrom = txt.match(/Financial year.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const cin          = txt.match(/([A-Z]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})/)?.[1]||"";
+  const nm1          = txt.match(/Name of the company\s+([A-Z][A-Z\s&,.()-]+(?:PRIVATE\s*LIMITED|LIMITED|LLP))/i)?.[1]||"";
+  const srn          = txt.match(/eForm Service request number.*?([A-Z0-9][\w-]+)/i)?.[1]||txt.match(/SRN\s+([A-Z0-9][\w-]+)/)?.[1]||"";
+  const filingDate   = txt.match(/eForm filing date.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const agmDate      = txt.match(/date of AGM.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
+  const fyFrom       = txt.match(/Financial year.*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]||"";
   const isSmallCompany = /Small Company/i.test(txt)?"Yes":"No";
-  const companyType = txt.includes("Private")?"Private":txt.includes("Public")?"Public":"Private";
-  const toAbs = parseInt(txt.match(/\*Turnover\s+(-?\d+)/)?.[1]||"0")||0;
-  const nwAbs = parseInt(txt.match(/Net worth.*?(-?\d+)/i)?.[1]||"0")||0;
-  const dirMatches = [...txt.matchAll(/(\d{8})\s+([A-Z][A-Z\s]+?)\s+(?:Director|Manager)/g)];
-  const directors = dirMatches.map(m=>({ "DIN/PAN":m[1],"Name":m[2].replace(/\s+/g," ").trim(),"Designation":"Director","Date of Appointment":"-","Cessation Date":"-" }));
+  const companyType  = txt.includes("Private")?"Private":txt.includes("Public")?"Public":"Private";
+  const toAbs        = parseInt(txt.match(/\*Turnover\s+(-?\d+)/)?.[1]||"0")||0;
+  const nwAbs        = parseInt(txt.match(/Net worth.*?(-?\d+)/i)?.[1]||"0")||0;
+  const dirMatches   = [...txt.matchAll(/(\d{8})\s+([A-Z][A-Z\s]+?)\s+(?:Director|Manager)/g)];
+  const directors    = dirMatches.map(m=>({"DIN/PAN":m[1],"Name":m[2].replace(/\s+/g," ").trim(),"Designation":"Director","Date of Appointment":"-","Cessation Date":"-"}));
   return { type:"mgt7", fileName, cin, companyName:nm1.replace(/\s+/g," "), srn, filingDate, lastAGM:agmDate, fyFrom,
     isSmallCompany, companyType, directors, turnoverAbsolute:toAbs, netWorthAbsolute:nwAbs, turnover:toC(toAbs), networth:toC(nwAbs) };
 };
-
 const parseMDS = (file) => new Promise((res,rej) => {
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -167,7 +171,7 @@ const parseMDS = (file) => new Promise((res,rej) => {
       const kv = {}; (raw["MasterData"]||raw[wb.SheetNames[0]]||[]).forEach(([k,v])=>{if(k)kv[String(k).trim()]=String(v??"").trim();});
       const classVal=(kv["Class of Company"]||"").toLowerCase();
       let companyType="Private"; if(classVal.includes("public"))companyType="Public"; else if(classVal.includes("llp"))companyType="LLP";
-      const tC=(s)=>{const n=parseFloat(String(s||"").replace(/,/g,"")); return isNaN(n)?"": (n/10000000).toFixed(4);};
+      const tC=(s)=>{const n=parseFloat(String(s||"").replace(/,/g,"")); return isNaN(n)?"":(n/10000000).toFixed(4);};
       const master = {
         companyName:kv["Company Name"]||"", cin:kv["CIN"]||"", companyType,
         listedStatus:(kv["Listed in Stock Exchange(s) (Y/N)"]||"").toLowerCase()==="yes"?"Listed":"Unlisted",
@@ -195,7 +199,7 @@ const parseMDS = (file) => new Promise((res,rej) => {
   reader.onerror=rej; reader.readAsArrayBuffer(file);
 });
 
-// ─── CSS ──────────────────────────────────────────────────────────────────────
+// ── CSS ───────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -231,12 +235,25 @@ input::placeholder,textarea::placeholder{color:#94a3b8}
 .row{transition:.12s}.row:hover{background:#f8fafc}
 `;
 
-// ─── EditForm ─────────────────────────────────────────────────────────────────
-function EditForm({rule, init, onSave, onCancel}) {
+// ── Sub-components ────────────────────────────────────────────────────────────
+function LogoImg({height=40, style={}, onClick}) {
+  const [err, setErr] = useState(false);
+  if (err) return (
+    <div onClick={onClick} style={{cursor:onClick?"pointer":"default",display:"flex",alignItems:"center",gap:8,...style}}>
+      <div style={{width:height,height,borderRadius:10,background:"linear-gradient(135deg,#1a5f8a,#00b4a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:height*0.5,flexShrink:0}}>⚖️</div>
+      <div style={{fontWeight:800,fontSize:height*0.45,color:"#0d2d4a",letterSpacing:"-.5px",lineHeight:1}}>
+        <span>roc</span><span style={{color:"#00b4a6"}}>Sphere</span>
+      </div>
+    </div>
+  );
+  return <img src="/logo.png" alt="rocSphere" onError={()=>setErr(true)} onClick={onClick} style={{height,objectFit:"contain",cursor:onClick?"pointer":"default",flexShrink:0,...style}}/>;
+}
+
+function EditForm({init, onSave, onCancel}) {
   const [status, setStatus] = useState(init.status||"pending");
-  const [srn, setSrn] = useState(init.srn||"");
-  const [fd, setFd] = useState(init.filedDate||"");
-  const [notes, setNotes] = useState(init.notes||"");
+  const [srn,    setSrn]    = useState(init.srn||"");
+  const [fd,     setFd]     = useState(init.filedDate||"");
+  const [notes,  setNotes]  = useState(init.notes||"");
   return (
     <div>
       <div style={{marginBottom:12}}>
@@ -269,29 +286,20 @@ function EditForm({rule, init, onSave, onCancel}) {
   );
 }
 
-// ─── DropZone ─────────────────────────────────────────────────────────────────
-function DropZone({icon, label, sub, loading, loadingText, onClick}) {
-  const [drag, setDrag] = useState(false);
+function DropZone({icon,label,sub,loading,loadingText,onClick}) {
+  const [drag,setDrag]=useState(false);
   return (
-    <div
-      onDrop={e=>{e.preventDefault();setDrag(false);}}
-      onDragOver={e=>{e.preventDefault();setDrag(true);}}
-      onDragLeave={()=>setDrag(false)}
-      onClick={onClick}
-      style={{border:`2px dashed ${drag?"#00b4a6":"#cbd5e1"}`,borderRadius:10,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:drag?"#f0fdfa":"#f8fafc",transition:".16s"}}
-    >
+    <div onDrop={e=>{e.preventDefault();setDrag(false);}} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onClick={onClick}
+      style={{border:`2px dashed ${drag?"#00b4a6":"#cbd5e1"}`,borderRadius:10,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:drag?"#f0fdfa":"#f8fafc",transition:".16s"}}>
       {loading
-        ? <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"#64748b"}}>{loadingText}</div></div>
-        : <><div style={{fontSize:32,marginBottom:10}}>{icon}</div><div style={{fontWeight:700,fontSize:12,color:"#334155"}}>{label}</div><div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{sub}</div></>
-      }
+        ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"#64748b"}}>{loadingText}</div></div>
+        :<><div style={{fontSize:32,marginBottom:10}}>{icon}</div><div style={{fontWeight:700,fontSize:12,color:"#334155"}}>{label}</div><div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{sub}</div></>}
     </div>
   );
 }
 
-// ─── UploadModal ──────────────────────────────────────────────────────────────
-function UploadModal({mode, setMode, onMds, onPdf, loading, err, onClose}) {
-  const mdsRef = useRef();
-  const pdfRef = useRef();
+function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
+  const mdsRef=useRef(); const pdfRef=useRef();
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&!loading&&onClose()}>
       <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:16,padding:"24px",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
@@ -309,7 +317,7 @@ function UploadModal({mode, setMode, onMds, onPdf, loading, err, onClose}) {
         </div>
         {mode==="mds"&&(
           <div>
-            <p style={{fontSize:11,color:"#64748b",lineHeight:1.7,marginBottom:12}}>Upload the <strong style={{color:"#1a5f8a"}}>Master Data Sheet (MDS)</strong> Excel from the MCA portal. MasterData, Director Details and IndexOfCharges sheets are parsed automatically.</p>
+            <p style={{fontSize:11,color:"#64748b",lineHeight:1.7,marginBottom:12}}>Upload the <strong style={{color:"#1a5f8a"}}>Master Data Sheet (MDS)</strong> Excel from the MCA portal.</p>
             <input ref={mdsRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>onMds(e.target.files[0])}/>
             <DropZone icon="📊" label="Drop MDS Excel here or click" sub=".xlsx / .xls" loading={loading} loadingText="Parsing MDS..." onClick={()=>!loading&&mdsRef.current?.click()}/>
           </div>
@@ -330,76 +338,92 @@ function UploadModal({mode, setMode, onMds, onPdf, loading, err, onClose}) {
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
+// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [db, setDb] = useState({companies:{}});
-  const [screen, setScreen] = useState("dash");
-  const [selCin, setSelCin] = useState(null);
-  const [tab, setTab] = useState("compliances");
-  const [showUpload, setShowUpload] = useState(false);
-  const [uploadMode, setUploadMode] = useState("mds");
-  const [uploading, setUploading] = useState(false);
-  const [uploadErr, setUploadErr] = useState("");
-  const [editStatus, setEditStatus] = useState(null);
-  const [filterCat, setFilterCat] = useState("All");
-  const [filterSt, setFilterSt] = useState("All");
-  const [search, setSearch] = useState("");
-  const [delConfirm, setDelConfirm] = useState(null);
+  const [db,          setDb]          = useState({companies:{}});
+  const [screen,      setScreen]      = useState("dash");
+  const [selCin,      setSelCin]      = useState(null);
+  const [tab,         setTab]         = useState("compliances");
+  const [showUpload,  setShowUpload]  = useState(false);
+  const [uploadMode,  setUploadMode]  = useState("mds");
+  const [uploading,   setUploading]   = useState(false);
+  const [uploadErr,   setUploadErr]   = useState("");
+  const [editStatus,  setEditStatus]  = useState(null);
+  const [filterCat,   setFilterCat]   = useState("All");
+  const [filterSt,    setFilterSt]    = useState("All");
+  const [search,      setSearch]      = useState("");
+  const [delConfirm,  setDelConfirm]  = useState(null);
   const [dataLoading, setDataLoading] = useState(true);
-  const [backendErr, setBackendErr] = useState("");
+  const [backendErr,  setBackendErr]  = useState("");
+  const [loadingMsg,  setLoadingMsg]  = useState("Connecting to backend...");
 
+  // ── API helpers ─────────────────────────────────────────────────────────────
   const fetchCompanies = async () => {
     try {
-      const res = await fetch(`${API_BASE}/companies`);
+      const res = await fetchWithTimeout(`${API_BASE}/companies`, {}, 8000);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : (data.companies || []);
-      const companiesObj = {};
-      list.forEach(co => { companiesObj[co.cin] = co; });
-      setDb({companies: companiesObj});
+      const obj = {};
+      list.forEach(co => { obj[co.cin] = co; });
+      setDb({companies: obj});
       setBackendErr("");
     } catch (err) {
-      setBackendErr(err.message);
+      if (err.name === "AbortError") {
+        setBackendErr("Backend timed out — it may be waking up. Refresh in 30 seconds.");
+      } else {
+        setBackendErr(err.message);
+      }
     }
   };
 
   const saveCompanyToBackend = async (companyData) => {
-    const res = await fetch(`${API_BASE}/companies`, {
+    const res = await fetchWithTimeout(`${API_BASE}/companies`, {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify(companyData),
-    });
+    }, 10000);
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
     await fetchCompanies();
   };
 
   const updateFilingStatusAPI = async (cin, ruleId, statusData) => {
-    const res = await fetch(`${API_BASE}/filing-status/${cin}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/filing-status/${cin}`, {
       method: "PUT",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({rule_id: ruleId, ...statusData}),
-    });
+    }, 10000);
     if (!res.ok) throw new Error(`Update failed: ${res.status}`);
     await fetchCompanies();
   };
 
   const deleteCompany = async (cin) => {
     try {
-      await fetch(`${API_BASE}/companies/${cin}`, {method:"DELETE"});
+      await fetchWithTimeout(`${API_BASE}/companies/${cin}`, {method:"DELETE"}, 8000);
       await fetchCompanies();
-      if (selCin === cin) { setSelCin(null); setScreen("dash"); }
+      if (selCin===cin) { setSelCin(null); setScreen("dash"); }
       setDelConfirm(null);
-    } catch (err) { alert("Failed to delete company"); }
+    } catch { alert("Failed to delete company"); }
   };
 
   useEffect(() => {
-    (async () => { await fetchCompanies(); setDataLoading(false); })();
+    // Show a helpful message if it's taking long (Render free tier waking up)
+    const t1 = setTimeout(() => setLoadingMsg("Backend is waking up, please wait..."), 3000);
+    const t2 = setTimeout(() => setLoadingMsg("Almost there... (first load can take ~30s)"), 8000);
+    (async () => {
+      await fetchCompanies();
+      setDataLoading(false);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    })();
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  const companies = useMemo(() => Object.values(db.companies), [db]);
-  const company = useMemo(() => selCin && db.companies[selCin] ? db.companies[selCin] : null, [selCin, db]);
-  const applicable = useMemo(() => company ? COMPLIANCE_RULES.filter(r => r.applies(company)) : [], [company]);
-  const filtered = useMemo(() => applicable.filter(r => {
+  // ── Derived state ────────────────────────────────────────────────────────────
+  const companies  = useMemo(() => Object.values(db.companies), [db]);
+  const company    = useMemo(() => selCin && db.companies[selCin] ? db.companies[selCin] : null, [selCin, db]);
+  const applicable = useMemo(() => company ? COMPLIANCE_RULES.filter(r=>r.applies(company)) : [], [company]);
+  const filtered   = useMemo(() => applicable.filter(r => {
     const st = company?.filingStatus?.[r.id]?.status || "pending";
     return (filterCat==="All"||r.cat===filterCat) &&
            (filterSt==="All"||filterSt===st) &&
@@ -409,38 +433,39 @@ export default function App() {
   const globalUpcoming = useMemo(() => {
     const items = [];
     for (const co of companies) {
-      for (const rule of COMPLIANCE_RULES.filter(r => r.applies(co))) {
+      for (const rule of COMPLIANCE_RULES.filter(r=>r.applies(co))) {
         const st = co.filingStatus?.[rule.id]?.status || "pending";
         if (st==="filed"||st==="na") continue;
-        const {upcoming: u} = calcDueDates(rule, co);
+        const {upcoming:u} = calcDueDates(rule, co);
         if (!u?.date) continue;
         const n = daysLeft(u.date);
-        if (n!==null && n>=0 && n<=90) items.push({cin:co.cin, name:co.companyName, rule, date:u.date, label:u.label, n});
+        if (n!==null&&n>=0&&n<=90) items.push({cin:co.cin, name:co.companyName, rule, date:u.date, label:u.label, n});
       }
     }
-    return items.sort((a,b) => a.n - b.n);
+    return items.sort((a,b)=>a.n-b.n);
   }, [companies]);
 
   const coStats = useMemo(() => {
     const s = {};
     for (const co of companies) {
-      const rules = COMPLIANCE_RULES.filter(r => r.applies(co));
+      const rules = COMPLIANCE_RULES.filter(r=>r.applies(co));
       let filed=0, overdue=0, up30=0;
       for (const r of rules) {
         const st = co.filingStatus?.[r.id]?.status || "pending";
         if (st==="filed") { filed++; continue; }
         if (st==="na") continue;
-        const {upcoming: u} = calcDueDates(r, co);
+        const {upcoming:u} = calcDueDates(r, co);
         if (!u?.date) continue;
         const n = daysLeft(u.date);
-        if (n!==null && n<0) overdue++;
-        else if (n!==null && n<=30) up30++;
+        if (n!==null&&n<0) overdue++;
+        else if (n!==null&&n<=30) up30++;
       }
       s[co.cin] = {total:rules.length, filed, overdue, up30};
     }
     return s;
   }, [companies]);
 
+  // ── Upload handlers ──────────────────────────────────────────────────────────
   const handleMDS = async (file) => {
     if (!file?.name.match(/\.(xlsx|xls)$/i)) { setUploadErr("Upload a valid .xlsx/.xls file"); return; }
     setUploading(true); setUploadErr("");
@@ -448,9 +473,10 @@ export default function App() {
       const p = await parseMDS(file);
       if (!p.master.cin) { setUploadErr("CIN not found in file."); setUploading(false); return; }
       const ex = db.companies[p.master.cin] || {filingStatus:{}, documents:[]};
-      await saveCompanyToBackend({...ex, ...p.master, directors:p.directors, charges:p.charges, updatedAt:new Date().toISOString(), filingStatus:ex.filingStatus||{}, documents:ex.documents||[]});
+      await saveCompanyToBackend({...ex, ...p.master, directors:p.directors, charges:p.charges,
+        updatedAt:new Date().toISOString(), filingStatus:ex.filingStatus||{}, documents:ex.documents||[]});
       setShowUpload(false); setSelCin(p.master.cin); setScreen("company"); setTab("compliances");
-    } catch (e) { setUploadErr("Failed: " + e.message); }
+    } catch(e) { setUploadErr("Failed: "+e.message); }
     setUploading(false);
   };
 
@@ -459,7 +485,7 @@ export default function App() {
     setUploading(true); setUploadErr("");
     try {
       const txt = await extractPdfText(file);
-      const p = type==="aoc4" ? parseAOC4(txt, file.name) : parseMGT7(txt, file.name);
+      const p   = type==="aoc4" ? parseAOC4(txt, file.name) : parseMGT7(txt, file.name);
       if (!p.cin) { setUploadErr("CIN not found. Ensure this is a text-based MCA eForm PDF."); setUploading(false); return; }
       const ex = db.companies[p.cin] || {cin:p.cin, filingStatus:{}, documents:[], hasCharges:false, listedStatus:"Unlisted", companyStatus:"Active"};
       const autoFiled = {
@@ -473,64 +499,51 @@ export default function App() {
         ...(p.paidUpCapital?{paidUpCapital:p.paidUpCapital}:{}), ...(p.directors?.length?{directors:p.directors}:{}),
         updatedAt:new Date().toISOString(),
         documents:[...(ex.documents||[]).filter(d=>d.srn!==p.srn), {type:p.type, form:type==="aoc4"?"AOC-4":"MGT-7/MGT-7A", srn:p.srn, filingDate:p.filingDate, fyFrom:p.fyFrom, fyTo:p.fyTo||"", fileName:file.name, auditor:p.auditor||""}],
-        filingStatus:{...(ex.filingStatus||{}), ...autoFiled}
+        filingStatus:{...(ex.filingStatus||{}), ...autoFiled},
       };
       await saveCompanyToBackend(updated);
       setShowUpload(false); setSelCin(p.cin); setScreen("company"); setTab("compliances");
-    } catch (e) { setUploadErr("Failed: " + e.message); }
+    } catch(e) { setUploadErr("Failed: "+e.message); }
     setUploading(false);
   };
 
   const updateStatus = async (cin, rid, data) => {
     try { await updateFilingStatusAPI(cin, rid, data); setEditStatus(null); }
-    catch (e) { alert("Failed to update: " + e.message); }
+    catch(e) { alert("Failed to update: "+e.message); }
   };
 
+  // ── Loading screen ────────────────────────────────────────────────────────────
   if (dataLoading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#f0f4f8",flexDirection:"column",gap:16,fontFamily:"Inter,sans-serif"}}>
-      {/* ── Logo shown on loading screen too ── */}
-      <img src="/logo.png" alt="rocSphere" style={{height:56, objectFit:"contain", marginBottom:4}}/>
-      <div className="spin" style={{width:24,height:24}}/>
-      <span style={{color:"#64748b",fontSize:12,fontWeight:500}}>Connecting to backend...</span>
+      <LogoImg height={52}/>
+      <div className="spin" style={{width:26,height:26,marginTop:8}}/>
+      <span style={{color:"#64748b",fontSize:12,fontWeight:500,marginTop:4}}>{loadingMsg}</span>
+      <span style={{color:"#94a3b8",fontSize:10,marginTop:-8}}>
+        Tip: Backend on Render free tier sleeps after 15 min of inactivity
+      </span>
     </div>
   );
 
+  // ── App shell ─────────────────────────────────────────────────────────────────
   return (
     <div style={{fontFamily:"'Inter',sans-serif",minHeight:"100vh",background:"#f0f4f8",color:"#0d2d4a"}}>
       <style>{CSS}</style>
 
       {/* ══ NAVBAR ══════════════════════════════════════════════════════════════ */}
       <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 6px rgba(13,45,74,.07)",height:62}}>
-
-        {/* Left — Logo + breadcrumb */}
         <div style={{display:"flex",alignItems:"center",gap:14}}>
-
-          {/* ── LOGO IMAGE ── Place logo.png in your /public folder ── */}
-          <img
-            src="/logo.png"
-            alt="rocSphere"
-            onClick={()=>{setScreen("dash");setSelCin(null);}}
-            style={{height:40, objectFit:"contain", cursor:"pointer", flexShrink:0}}
-          />
-
-          {/* Divider */}
+          <LogoImg height={40} onClick={()=>{setScreen("dash");setSelCin(null);}}/>
           <div style={{width:1,height:28,background:"#e2e8f0",flexShrink:0}}/>
-
-          {/* Page label / breadcrumb */}
           {screen==="dash"?(
             <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".6px"}}>Dashboard</div>
-          ):(
-            screen==="company"&&company&&(
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:10,color:"#94a3b8",cursor:"pointer",fontWeight:500,transition:".13s"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>Dashboard</span>
-                <span style={{color:"#cbd5e1",fontSize:13}}>›</span>
-                <span style={{fontSize:11,color:"#1a5f8a",fontWeight:700,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{company.companyName}</span>
-              </div>
-            )
+          ):screen==="company"&&company&&(
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:10,color:"#94a3b8",cursor:"pointer",fontWeight:500}} onClick={()=>{setScreen("dash");setSelCin(null);}}>Dashboard</span>
+              <span style={{color:"#cbd5e1",fontSize:13}}>›</span>
+              <span style={{fontSize:11,color:"#1a5f8a",fontWeight:700,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{company.companyName}</span>
+            </div>
           )}
         </div>
-
-        {/* Right — alerts + CTA */}
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {globalUpcoming.length>0&&(
             <div style={{display:"flex",alignItems:"center",gap:5,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:7,padding:"5px 11px",cursor:"pointer"}} onClick={()=>setScreen("dash")}>
@@ -538,33 +551,32 @@ export default function App() {
               <span style={{fontSize:10,fontWeight:700,color:"#d97706"}}>{globalUpcoming.length} due in 90d</span>
             </div>
           )}
-          <button className="btn pri" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>
-            + Add / Update Company
-          </button>
+          <button className="btn pri" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>+ Add / Update Company</button>
         </div>
       </div>
 
       {/* Backend error banner */}
       {backendErr&&(
-        <div style={{background:"#fef2f2",borderBottom:"1px solid #fecaca",padding:"8px 24px",fontSize:11,color:"#dc2626",textAlign:"center",fontWeight:500}}>
-          ⚠ Backend connection issue: {backendErr}
+        <div style={{background:"#fef2f2",borderBottom:"1px solid #fecaca",padding:"9px 24px",fontSize:11,color:"#dc2626",textAlign:"center",fontWeight:500,display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+          ⚠ Backend: {backendErr}
+          <button className="btn red" style={{fontSize:10,padding:"3px 10px"}} onClick={fetchCompanies}>Retry</button>
         </div>
       )}
 
-      {/* ══ MAIN CONTENT ═══════════════════════════════════════════════════════ */}
+      {/* ══ CONTENT ═════════════════════════════════════════════════════════════ */}
       <div style={{maxWidth:1160,margin:"0 auto",padding:"24px 16px"}}>
 
-        {/* ── DASHBOARD ───────────────────────────────────────────────────────── */}
+        {/* ── DASHBOARD ── */}
         {screen==="dash"&&(
           <div className="up">
             {/* Stat cards */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:22}}>
               {[
-                ["Companies",          companies.length,                                                         "#1a5f8a","#eff6ff","🏢"],
-                ["Applicable Rules",   companies.reduce((a,c)=>a+(COMPLIANCE_RULES.filter(r=>r.applies(c)).length),0), "#0d7a70","#f0fdfa","📋"],
-                ["Overdue",            companies.reduce((a,c)=>a+(coStats[c.cin]?.overdue||0),0),               "#dc2626","#fef2f2","⚠️"],
-                ["Due in 30 Days",     globalUpcoming.filter(x=>x.n<=30).length,                                "#d97706","#fffbeb","📅"],
-              ].map(([l,v,col,bg,ic])=>(
+                ["Companies",       companies.length,                                                          "#1a5f8a","🏢"],
+                ["Applicable Rules",companies.reduce((a,c)=>a+(COMPLIANCE_RULES.filter(r=>r.applies(c)).length),0),"#0d7a70","📋"],
+                ["Overdue",         companies.reduce((a,c)=>a+(coStats[c.cin]?.overdue||0),0),                 "#dc2626","⚠️"],
+                ["Due in 30 Days",  globalUpcoming.filter(x=>x.n<=30).length,                                  "#d97706","📅"],
+              ].map(([l,v,col,ic])=>(
                 <div key={l} className="card" style={{padding:"16px 18px",borderTop:`3px solid ${col}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                     <div>
@@ -578,7 +590,6 @@ export default function App() {
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:16,alignItems:"start"}}>
-
               {/* Companies list */}
               <div>
                 <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>Companies ({companies.length})</div>
@@ -591,7 +602,7 @@ export default function App() {
                       <button className="btn pri" onClick={()=>setShowUpload(true)}>+ Add Company</button>
                     </div>
                   ):companies.map(co=>{
-                    const st = coStats[co.cin]||{};
+                    const st  = coStats[co.cin]||{};
                     const pct = st.total ? Math.round((st.filed/st.total)*100) : 0;
                     return (
                       <div key={co.cin} className="card" style={{padding:"14px 16px",cursor:"pointer"}} onClick={()=>{setSelCin(co.cin);setScreen("company");setTab("compliances");setFilterCat("All");setFilterSt("All");setSearch("");}}>
@@ -611,7 +622,6 @@ export default function App() {
                             <div style={{textAlign:"center",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 11px"}}><div style={{fontSize:16,fontWeight:800,color:"#1a5f8a",fontFamily:"IBM Plex Mono,monospace"}}>{st.total}</div><div style={{fontSize:8,color:"#1a5f8a",fontWeight:700,marginTop:1}}>TOTAL</div></div>
                           </div>
                         </div>
-                        {/* Progress bar */}
                         <div style={{marginTop:10,paddingTop:9,borderTop:"1px solid #f1f5f9"}}>
                           <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#94a3b8",marginBottom:5}}>
                             <span>AGM: <span style={{color:"#475569",fontWeight:600}}>{co.lastAGM||"-"}</span></span>
@@ -656,14 +666,14 @@ export default function App() {
                       </div>
                     );
                   })}
-                  {globalUpcoming.length>12&&<div style={{padding:"8px 14px",textAlign:"center",fontSize:9,color:"#94a3b8",borderTop:"1px solid #f1f5f9",background:"#f8fafc"}}>+{globalUpcoming.length-12} more deadlines</div>}
+                  {globalUpcoming.length>12&&<div style={{padding:"8px 14px",textAlign:"center",fontSize:9,color:"#94a3b8",borderTop:"1px solid #f1f5f9",background:"#f8fafc"}}>+{globalUpcoming.length-12} more</div>}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── COMPANY DETAIL ──────────────────────────────────────────────────── */}
+        {/* ── COMPANY DETAIL ── */}
         {screen==="company"&&company&&(
           <div className="up">
             {/* Header */}
@@ -712,16 +722,13 @@ export default function App() {
               ))}
             </div>
 
-            {/* ── COMPLIANCES TAB ── */}
+            {/* COMPLIANCES TAB */}
             {tab==="compliances"&&(
               <div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
                   <input className="inp" style={{maxWidth:200,padding:"6px 10px",fontSize:10}} placeholder="Search forms..." value={search} onChange={e=>setSearch(e.target.value)}/>
                   <select className="inp" style={{width:"auto",padding:"6px 10px",fontSize:10}} value={filterSt} onChange={e=>setFilterSt(e.target.value)}>
-                    <option value="All">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="filed">Filed</option>
-                    <option value="na">N/A</option>
+                    <option value="All">All Status</option><option value="pending">Pending</option><option value="filed">Filed</option><option value="na">N/A</option>
                   </select>
                   <select className="inp" style={{width:"auto",padding:"6px 10px",fontSize:10}} value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
                     <option value="All">All Categories</option>
@@ -734,9 +741,9 @@ export default function App() {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(310px,1fr))",gap:10}}>
                   {filtered.map(rule=>{
                     const col = CAT_COL[rule.cat]||{bg:"#f1f5f9",bd:"#e2e8f0",txt:"#64748b"};
-                    const st = company.filingStatus?.[rule.id]||{status:"pending"};
+                    const st  = company.filingStatus?.[rule.id]||{status:"pending"};
                     const {upcoming:u} = calcDueDates(rule, company);
-                    const n = u ? daysLeft(u.date) : null;
+                    const n   = u ? daysLeft(u.date) : null;
                     const urg = urgency(n);
                     return (
                       <div key={rule.id} className="card" style={{padding:"14px 16px",position:"relative",borderLeft:`3px solid ${col.txt}50`}}>
@@ -777,7 +784,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ── DIRECTORS TAB ── */}
+            {/* DIRECTORS TAB */}
             {tab==="directors"&&(
               <div>
                 {!(company.directors||[]).length?(
@@ -813,7 +820,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ── DOCUMENTS TAB ── */}
+            {/* DOCUMENTS TAB */}
             {tab==="documents"&&(
               <div>
                 <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginBottom:12}}>
@@ -844,7 +851,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ── FINANCIALS TAB ── */}
+            {/* FINANCIALS TAB */}
             {tab==="financials"&&(
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div className="card" style={{padding:"15px 18px"}}>
@@ -879,8 +886,8 @@ export default function App() {
                       <div key={k}>
                         <label style={{fontSize:8,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>{l}</label>
                         <input className="inp" type="number" step="0.0001" placeholder="0.0000" value={company[k]||""} onChange={async e=>{
-                          const updated = {...company, [k]:e.target.value};
-                          try { await saveCompanyToBackend(updated); } catch(err) { alert("Save failed"); }
+                          const updated={...company,[k]:e.target.value};
+                          try { await saveCompanyToBackend(updated); } catch { alert("Save failed"); }
                         }}/>
                       </div>
                     ))}
@@ -888,11 +895,11 @@ export default function App() {
                   <div style={{fontSize:9,color:"#94a3b8",marginBottom:10}}>Enter in Crore (₹ Cr). These values determine applicability of CSR and XBRL filings.</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(215px,1fr))",gap:6}}>
                     {[
-                      ["PaidUp ≥ ₹500 Cr → XBRL",   +company.paidUpCapital>=500],
-                      ["Turnover ≥ ₹500 Cr → XBRL",  +company.turnover>=500],
-                      ["NW ≥ ₹500 Cr → CSR",          +company.networth>=500],
-                      ["Turnover ≥ ₹1000 Cr → CSR",   +company.turnover>=1000],
-                      ["Net Profit ≥ ₹5 Cr → CSR",    +company.netProfit>=5],
+                      ["PaidUp ≥ ₹500 Cr → XBRL",  +company.paidUpCapital>=500],
+                      ["Turnover ≥ ₹500 Cr → XBRL", +company.turnover>=500],
+                      ["NW ≥ ₹500 Cr → CSR",         +company.networth>=500],
+                      ["Turnover ≥ ₹1000 Cr → CSR",  +company.turnover>=1000],
+                      ["Net Profit ≥ ₹5 Cr → CSR",   +company.netProfit>=5],
                     ].map(([l,v])=>(
                       <div key={l} style={{fontSize:9,color:v?"#dc2626":"#16a34a",background:v?"#fef2f2":"#f0fdf4",padding:"5px 9px",borderRadius:5,border:`1px solid ${v?"#fecaca":"#bbf7d0"}`,fontWeight:600}}>
                         {v?"⚠ ":"✓ "}{l}
@@ -908,17 +915,11 @@ export default function App() {
 
       {/* ══ MODALS ══════════════════════════════════════════════════════════════ */}
 
-      {/* Upload modal */}
       {showUpload&&(
-        <UploadModal
-          mode={uploadMode} setMode={setUploadMode}
-          onMds={handleMDS} onPdf={handlePDF}
-          loading={uploading} err={uploadErr}
-          onClose={()=>!uploading&&setShowUpload(false)}
-        />
+        <UploadModal mode={uploadMode} setMode={setUploadMode} onMds={handleMDS} onPdf={handlePDF}
+          loading={uploading} err={uploadErr} onClose={()=>!uploading&&setShowUpload(false)}/>
       )}
 
-      {/* Edit filing status modal */}
       {editStatus&&(()=>{
         const rule = COMPLIANCE_RULES.find(r=>r.id===editStatus.id);
         return (
@@ -931,20 +932,19 @@ export default function App() {
                   <div style={{fontSize:9,color:"#94a3b8"}}>{rule?.title}</div>
                 </div>
               </div>
-              <EditForm rule={rule} init={editStatus.current} onSave={d=>updateStatus(editStatus.cin,editStatus.id,d)} onCancel={()=>setEditStatus(null)}/>
+              <EditForm init={editStatus.current} onSave={d=>updateStatus(editStatus.cin,editStatus.id,d)} onCancel={()=>setEditStatus(null)}/>
             </div>
           </div>
         );
       })()}
 
-      {/* Delete confirm modal */}
       {delConfirm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
           <div style={{background:"#fff",border:"1px solid #fecaca",borderRadius:14,padding:"28px",width:"100%",maxWidth:360,textAlign:"center",boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
             <div style={{width:52,height:52,borderRadius:14,background:"#fef2f2",border:"1px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 14px"}}>⚠️</div>
             <div style={{fontSize:15,fontWeight:700,marginBottom:6,color:"#0d2d4a"}}>Remove Company?</div>
             <div style={{fontSize:11,color:"#64748b",marginBottom:22,lineHeight:1.6}}>
-              All data for <strong style={{color:"#0d2d4a"}}>{db?.companies[delConfirm]?.companyName}</strong> will be permanently removed from the database.
+              All data for <strong style={{color:"#0d2d4a"}}>{db?.companies[delConfirm]?.companyName}</strong> will be permanently removed.
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"center"}}>
               <button className="btn" style={{padding:"8px 20px"}} onClick={()=>setDelConfirm(null)}>Cancel</button>
