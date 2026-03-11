@@ -10,33 +10,59 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── App ────────────────────────────────────────────────────────────────────────
+# ── FastAPI App ───────────────────────────────────────────────────────────────
 app = FastAPI(
     title="RocSphere API",
     description="ROC Compliance Tracker Backend",
     version="1.0.0"
 )
 
-# ── CORS — registered BEFORE routers ──────────────────────────────────────────
+
+# ── CORS Configuration (Render Frontend Allowed) ──────────────────────────────
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "https://roc-sphere-frontend.onrender.com"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        FRONTEND_URL
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── MongoDB ────────────────────────────────────────────────────────────────────
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+
+# ── MongoDB Configuration ─────────────────────────────────────────────────────
+MONGO_URL = os.getenv("MONGO_URL")
+
+if not MONGO_URL:
+    logger.warning("⚠ MONGO_URL not set — using localhost fallback")
+    MONGO_URL = "mongodb://localhost:27017"
+
 
 try:
-    client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
+    client = MongoClient(
+        MONGO_URL,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=10000
+    )
+
+    # Test connection
     client.admin.command("ping")
+
     db = client["rocsphere"]
     app.mongodb = db
+
     logger.info("✅ MongoDB connected successfully")
+
 except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+
     logger.error(f"❌ MongoDB connection failed: {e}")
+
     app.mongodb = None
 
 # ── Root ───────────────────────────────────────────────────────────────────────
