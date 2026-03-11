@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 
 // ⚠️ Set this to your actual Render backend URL
-const API_BASE = "https://rocsphere.onrender.com/api";
+const API_BASE = "https://rocsphere.onrender.com/api/roc";
 
 // Fetch with timeout — prevents infinite "Connecting to backend..." screen
 const fetchWithTimeout = (url, options = {}, ms = 8000) => {
