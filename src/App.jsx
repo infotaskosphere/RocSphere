@@ -6,10 +6,6 @@ const API_BASE = "https://roc-sphere-backend.onrender.com/api/roc";
 
 const TODAY = new Date();
 
-// ── rocSphere Brand Palette ──────────────────────────────────────────────────
-// Navy:  #0d2d4a   Blue: #1a5f8a   Teal: #00b4a6   Light teal: #4dd4c8
-// ─────────────────────────────────────────────────────────────────────────────
-
 const COMPLIANCE_RULES = [
   { id:"mgt7a", form:"MGT-7A", title:"Abridged Annual Return", cat:"Annual Filing", section:"Sec 92, Rule 11A", freq:"Annual", applies:(c)=>c.isSmallCompany==="Yes"||c.companyType==="OPC", tags:["Small Co/OPC"] },
   { id:"mgt7", form:"MGT-7", title:"Annual Return", cat:"Annual Filing", section:"Sec 92", freq:"Annual", applies:(c)=>c.companyType!=="LLP"&&c.isSmallCompany!=="Yes", tags:["Non-Small Co"] },
@@ -49,18 +45,17 @@ const fmt = (d) => { if(!d) return "-"; return `${String(d.getDate()).padStart(2
 const daysLeft = (d) => d ? Math.ceil((d-TODAY)/86400000) : null;
 
 const urgency = (n) => {
-  if (n===null) return {col:"#94a3b8",bg:"#f1f5f9",label:"-"};
-  if (n<0)      return {col:"#dc2626",bg:"#fef2f2",label:`${Math.abs(n)}d overdue`};
-  if (n<=30)    return {col:"#d97706",bg:"#fffbeb",label:`${n}d left`};
-  if (n<=90)    return {col:"#0d7a70",bg:"#f0fdfa",label:`${n}d left`};
-  return         {col:"#1a5f8a",bg:"#eff6ff",label:`${n}d left`};
+  if (n===null) return {col:"#94a3b8", bg:"#f1f5f9", label:"-"};
+  if (n<0)      return {col:"#dc2626", bg:"#fef2f2", label:`${Math.abs(n)}d overdue`};
+  if (n<=30)    return {col:"#d97706", bg:"#fffbeb", label:`${n}d left`};
+  if (n<=90)    return {col:"#0d7a70", bg:"#f0fdfa", label:`${n}d left`};
+  return         {col:"#1a5f8a", bg:"#eff6ff", label:`${n}d left`};
 };
 
 const calcDueDates = (rule, co) => {
   const agm = parseIndDate(co.lastAGM);
   const slots = [];
   const y = TODAY.getFullYear();
-
   switch(rule.id) {
     case "mgt7": case "mgt7a":
       if (agm) slots.push({label:`FY ${agm.getFullYear()-1}-${String(agm.getFullYear()).slice(2)}`, date: addDays(agm, 60)});
@@ -100,7 +95,6 @@ const calcDueDates = (rule, co) => {
     default:
       slots.push({label:"Event-based", date: null});
   }
-
   const upcoming = slots.filter(s => s.date && s.date >= TODAY).sort((a,b) => a.date - b.date)[0] || null;
   const past = slots.filter(s => s.date && s.date < TODAY).sort((a,b) => b.date - a.date)[0] || null;
   return { upcoming, past, all: slots };
@@ -138,7 +132,7 @@ const parseAOC4 = (txt, fileName) => {
   const fyFrom = txt.match(/From\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
   const fyTo = txt.match(/To\s+(\d{2}\/\d{2}\/\d{4})/)?.[1]||"";
   const nwAbs = parseInt(txt.match(/Net Worth.*?(-?\d+)/i)?.[1]||"0")||0;
-  const toAbs = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1] || txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
+  const toAbs = parseInt(txt.match(/Sale or supply of services\s+(\d+)/)?.[1]||txt.match(/\*Turnover\s+(\d+)/)?.[1]||"0")||0;
   const scAbs = parseInt(txt.match(/Share capital\s+(\d+)/)?.[1]||"0")||0;
   const plAbs = parseInt(txt.match(/Profit\s*\/?\s*\(Loss\).*?\(XI.*?XIV\).*?(-?\d+)/)?.[1]||"0")||0;
   const auditor = (txt.match(/Name of the auditor.*?firm\s+([A-Z][A-Z\s&.]+)/i)?.[1]||"").replace(/\s+/g," ").trim();
@@ -184,7 +178,7 @@ const parseMDS = (file) => new Promise((res,rej) => {
         isSmallCompany:kv["Small Company"]==="Yes"?"Yes":"No", activeCompliance:kv["ACTIVE compliance"]||"",
         lastAGM:kv["Date of last AGM"]||"", balanceSheetDate:kv["Date of Balance Sheet"]||"",
         category:kv["Category of Company"]||"", subcategory:kv["Subcategory of the Company"]||"",
-        networth:"",turnover:"",netProfit:"",
+        networth:"", turnover:"", netProfit:"",
       };
       const parseTable=(key)=>{
         const rows=raw[key]; if(!rows) return [];
@@ -201,7 +195,7 @@ const parseMDS = (file) => new Promise((res,rej) => {
   reader.onerror=rej; reader.readAsArrayBuffer(file);
 });
 
-// ── CSS — White + rocSphere Navy/Teal Brand Theme ────────────────────────────
+// ─── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -219,16 +213,16 @@ input::placeholder,textarea::placeholder{color:#94a3b8}
 .up{animation:up .2s ease forwards}
 .spin{animation:sp .7s linear infinite;border:2.5px solid #e2e8f0;border-top-color:#1a5f8a;border-radius:50%;width:20px;height:20px;display:inline-block;flex-shrink:0}
 .pls{animation:pulse 2s ease infinite}
-.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;transition:all .15s;box-shadow:0 1px 3px rgba(13,45,74,.06)}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;transition:all .15s;box-shadow:0 1px 3px rgba(13,45,74,.06)}
 .card:hover{border-color:#00b4a650;box-shadow:0 4px 16px rgba(13,45,74,.10)}
-.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:7px;border:1px solid #e2e8f0;background:#ffffff;color:#64748b;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:.13s;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:.13s;white-space:nowrap}
 .btn:hover{border-color:#00b4a6;color:#0d7a70;background:#f0fdfa}
 .btn.pri{background:linear-gradient(135deg,#1a5f8a,#0d2d4a);border-color:transparent;color:#fff;box-shadow:0 2px 10px rgba(26,95,138,.25)}
 .btn.pri:hover{box-shadow:0 4px 18px rgba(26,95,138,.40);transform:translateY(-1px)}
 .btn.teal{background:linear-gradient(135deg,#00b4a6,#0d7a70);border-color:transparent;color:#fff;box-shadow:0 2px 10px rgba(0,180,166,.25)}
 .btn.teal:hover{box-shadow:0 4px 18px rgba(0,180,166,.40);transform:translateY(-1px)}
 .btn.red{border-color:#fecaca;color:#dc2626;background:#fff}.btn.red:hover{background:#fef2f2;border-color:#dc2626}
-.inp{background:#ffffff;border:1px solid #e2e8f0;border-radius:7px;padding:7px 11px;color:#0d2d4a;font-size:11px;transition:.13s;width:100%}
+.inp{background:#fff;border:1px solid #e2e8f0;border-radius:7px;padding:7px 11px;color:#0d2d4a;font-size:11px;transition:.13s;width:100%}
 .inp:focus{border-color:#00b4a6;box-shadow:0 0 0 3px rgba(0,180,166,.12)}
 .bg{display:inline-flex;align-items:center;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700}
 .tab{padding:10px 16px;border-bottom:2.5px solid transparent;font-size:11px;font-weight:600;cursor:pointer;color:#94a3b8;transition:.13s;white-space:nowrap;background:transparent;border-left:none;border-right:none;border-top:none;font-family:inherit}
@@ -237,11 +231,12 @@ input::placeholder,textarea::placeholder{color:#94a3b8}
 .row{transition:.12s}.row:hover{background:#f8fafc}
 `;
 
-function EditForm({rule,init,onSave,onCancel}) {
-  const [status,setStatus]=useState(init.status||"pending");
-  const [srn,setSrn]=useState(init.srn||"");
-  const [fd,setFd]=useState(init.filedDate||"");
-  const [notes,setNotes]=useState(init.notes||"");
+// ─── EditForm ─────────────────────────────────────────────────────────────────
+function EditForm({rule, init, onSave, onCancel}) {
+  const [status, setStatus] = useState(init.status||"pending");
+  const [srn, setSrn] = useState(init.srn||"");
+  const [fd, setFd] = useState(init.filedDate||"");
+  const [notes, setNotes] = useState(init.notes||"");
   return (
     <div>
       <div style={{marginBottom:12}}>
@@ -274,20 +269,29 @@ function EditForm({rule,init,onSave,onCancel}) {
   );
 }
 
-function DropZone({icon,label,sub,loading,loadingText,onClick}) {
-  const [drag,setDrag]=useState(false);
+// ─── DropZone ─────────────────────────────────────────────────────────────────
+function DropZone({icon, label, sub, loading, loadingText, onClick}) {
+  const [drag, setDrag] = useState(false);
   return (
-    <div onDrop={e=>{e.preventDefault();setDrag(false);}} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onClick={onClick}
-      style={{border:`2px dashed ${drag?"#00b4a6":"#cbd5e1"}`,borderRadius:10,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:drag?"#f0fdfa":"#f8fafc",transition:".16s"}}>
+    <div
+      onDrop={e=>{e.preventDefault();setDrag(false);}}
+      onDragOver={e=>{e.preventDefault();setDrag(true);}}
+      onDragLeave={()=>setDrag(false)}
+      onClick={onClick}
+      style={{border:`2px dashed ${drag?"#00b4a6":"#cbd5e1"}`,borderRadius:10,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:drag?"#f0fdfa":"#f8fafc",transition:".16s"}}
+    >
       {loading
-        ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"#64748b"}}>{loadingText}</div></div>
-        :<><div style={{fontSize:32,marginBottom:10}}>{icon}</div><div style={{fontWeight:700,fontSize:12,color:"#334155"}}>{label}</div><div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{sub}</div></>}
+        ? <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}><div className="spin"/><div style={{fontSize:11,color:"#64748b"}}>{loadingText}</div></div>
+        : <><div style={{fontSize:32,marginBottom:10}}>{icon}</div><div style={{fontWeight:700,fontSize:12,color:"#334155"}}>{label}</div><div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{sub}</div></>
+      }
     </div>
   );
 }
 
-function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
-  const mdsRef=useRef(); const pdfRef=useRef();
+// ─── UploadModal ──────────────────────────────────────────────────────────────
+function UploadModal({mode, setMode, onMds, onPdf, loading, err, onClose}) {
+  const mdsRef = useRef();
+  const pdfRef = useRef();
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&!loading&&onClose()}>
       <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:16,padding:"24px",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
@@ -296,16 +300,16 @@ function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
             <div style={{fontSize:15,fontWeight:700,color:"#0d2d4a"}}>Upload Company Data</div>
             <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>MDS Excel · AOC-4 PDF · MGT-7/7A PDF</div>
           </div>
-          {!loading&&<button className="btn" onClick={onClose}>x</button>}
+          {!loading&&<button className="btn" onClick={onClose}>✕</button>}
         </div>
         <div style={{display:"flex",gap:4,marginBottom:18,background:"#f8fafc",borderRadius:9,padding:4,border:"1px solid #e2e8f0"}}>
-          {[["mds","MDS Excel"],["aoc4","AOC-4"],["mgt7","MGT-7/7A"]].map(([k,l])=>(
+          {[["mds","📊 MDS Excel"],["aoc4","📋 AOC-4"],["mgt7","📋 MGT-7/7A"]].map(([k,l])=>(
             <button key={k} onClick={()=>!loading&&setMode(k)} style={{flex:1,padding:"7px 0",borderRadius:6,border:"none",background:mode===k?"linear-gradient(135deg,#1a5f8a,#0d2d4a)":"transparent",color:mode===k?"#fff":"#94a3b8",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>{l}</button>
           ))}
         </div>
         {mode==="mds"&&(
           <div>
-            <p style={{fontSize:11,color:"#64748b",lineHeight:1.7,marginBottom:12}}>Upload the <strong style={{color:"#1a5f8a"}}>Master Data Sheet (MDS)</strong> Excel from the MCA portal.</p>
+            <p style={{fontSize:11,color:"#64748b",lineHeight:1.7,marginBottom:12}}>Upload the <strong style={{color:"#1a5f8a"}}>Master Data Sheet (MDS)</strong> Excel from the MCA portal. MasterData, Director Details and IndexOfCharges sheets are parsed automatically.</p>
             <input ref={mdsRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>onMds(e.target.files[0])}/>
             <DropZone icon="📊" label="Drop MDS Excel here or click" sub=".xlsx / .xls" loading={loading} loadingText="Parsing MDS..." onClick={()=>!loading&&mdsRef.current?.click()}/>
           </div>
@@ -314,34 +318,35 @@ function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
           <div>
             <p style={{fontSize:11,color:"#64748b",lineHeight:1.7,marginBottom:10}}>
               Upload the <strong style={{color:"#1a5f8a"}}>{mode==="aoc4"?"AOC-4":"MGT-7 / MGT-7A"}</strong> PDF from MCA portal.
-              <br/><span style={{color:"#d97706",fontSize:10}}>Requires text-based MCA eForms PDF (not scanned images)</span>
+              <br/><span style={{color:"#d97706",fontSize:10}}>⚠ Requires text-based MCA eForms PDF (not scanned images)</span>
             </p>
             <input ref={pdfRef} type="file" accept=".pdf" style={{display:"none"}} onChange={e=>onPdf(e.target.files[0],mode)}/>
             <DropZone icon="📋" label={`Drop ${mode==="aoc4"?"AOC-4":"MGT-7"} PDF here or click`} sub=".pdf only" loading={loading} loadingText="Extracting from PDF..." onClick={()=>!loading&&pdfRef.current?.click()}/>
           </div>
         )}
-        {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:7,padding:"9px 13px",fontSize:11,color:"#dc2626",marginTop:12}}>{err}</div>}
+        {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:7,padding:"9px 13px",fontSize:11,color:"#dc2626",marginTop:12}}>⚠ {err}</div>}
       </div>
     </div>
   );
 }
 
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [db,setDb]=useState({companies:{}});
-  const [screen,setScreen]=useState("dash");
-  const [selCin,setSelCin]=useState(null);
-  const [tab,setTab]=useState("compliances");
-  const [showUpload,setShowUpload]=useState(false);
-  const [uploadMode,setUploadMode]=useState("mds");
-  const [uploading,setUploading]=useState(false);
-  const [uploadErr,setUploadErr]=useState("");
-  const [editStatus,setEditStatus]=useState(null);
-  const [filterCat,setFilterCat]=useState("All");
-  const [filterSt,setFilterSt]=useState("All");
-  const [search,setSearch]=useState("");
-  const [delConfirm,setDelConfirm]=useState(null);
-  const [dataLoading,setDataLoading]=useState(true);
-  const [backendErr,setBackendErr]=useState("");
+  const [db, setDb] = useState({companies:{}});
+  const [screen, setScreen] = useState("dash");
+  const [selCin, setSelCin] = useState(null);
+  const [tab, setTab] = useState("compliances");
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadMode, setUploadMode] = useState("mds");
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const [editStatus, setEditStatus] = useState(null);
+  const [filterCat, setFilterCat] = useState("All");
+  const [filterSt, setFilterSt] = useState("All");
+  const [search, setSearch] = useState("");
+  const [delConfirm, setDelConfirm] = useState(null);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [backendErr, setBackendErr] = useState("");
 
   const fetchCompanies = async () => {
     try {
@@ -361,7 +366,7 @@ export default function App() {
   const saveCompanyToBackend = async (companyData) => {
     const res = await fetch(`${API_BASE}/companies`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {"Content-Type":"application/json"},
       body: JSON.stringify(companyData),
     });
     if (!res.ok) throw new Error(`Save failed: ${res.status}`);
@@ -371,8 +376,8 @@ export default function App() {
   const updateFilingStatusAPI = async (cin, ruleId, statusData) => {
     const res = await fetch(`${API_BASE}/filing-status/${cin}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rule_id: ruleId, ...statusData }),
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({rule_id: ruleId, ...statusData}),
     });
     if (!res.ok) throw new Error(`Update failed: ${res.status}`);
     await fetchCompanies();
@@ -380,7 +385,7 @@ export default function App() {
 
   const deleteCompany = async (cin) => {
     try {
-      await fetch(`${API_BASE}/companies/${cin}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/companies/${cin}`, {method:"DELETE"});
       await fetchCompanies();
       if (selCin === cin) { setSelCin(null); setScreen("dash"); }
       setDelConfirm(null);
@@ -396,9 +401,9 @@ export default function App() {
   const applicable = useMemo(() => company ? COMPLIANCE_RULES.filter(r => r.applies(company)) : [], [company]);
   const filtered = useMemo(() => applicable.filter(r => {
     const st = company?.filingStatus?.[r.id]?.status || "pending";
-    return (filterCat === "All" || r.cat === filterCat) &&
-           (filterSt === "All" || filterSt === st) &&
-           (!search || r.title.toLowerCase().includes(search.toLowerCase()) || r.form.toLowerCase().includes(search.toLowerCase()));
+    return (filterCat==="All"||r.cat===filterCat) &&
+           (filterSt==="All"||filterSt===st) &&
+           (!search||r.title.toLowerCase().includes(search.toLowerCase())||r.form.toLowerCase().includes(search.toLowerCase()));
   }), [applicable, filterCat, filterSt, search, company]);
 
   const globalUpcoming = useMemo(() => {
@@ -406,32 +411,32 @@ export default function App() {
     for (const co of companies) {
       for (const rule of COMPLIANCE_RULES.filter(r => r.applies(co))) {
         const st = co.filingStatus?.[rule.id]?.status || "pending";
-        if (st === "filed" || st === "na") continue;
+        if (st==="filed"||st==="na") continue;
         const {upcoming: u} = calcDueDates(rule, co);
         if (!u?.date) continue;
         const n = daysLeft(u.date);
-        if (n !== null && n >= 0 && n <= 90) items.push({ cin: co.cin, name: co.companyName, rule, date: u.date, label: u.label, n });
+        if (n!==null && n>=0 && n<=90) items.push({cin:co.cin, name:co.companyName, rule, date:u.date, label:u.label, n});
       }
     }
-    return items.sort((a, b) => a.n - b.n);
+    return items.sort((a,b) => a.n - b.n);
   }, [companies]);
 
   const coStats = useMemo(() => {
     const s = {};
     for (const co of companies) {
       const rules = COMPLIANCE_RULES.filter(r => r.applies(co));
-      let filed = 0, overdue = 0, up30 = 0;
+      let filed=0, overdue=0, up30=0;
       for (const r of rules) {
         const st = co.filingStatus?.[r.id]?.status || "pending";
-        if (st === "filed") { filed++; continue; }
-        if (st === "na") continue;
+        if (st==="filed") { filed++; continue; }
+        if (st==="na") continue;
         const {upcoming: u} = calcDueDates(r, co);
         if (!u?.date) continue;
         const n = daysLeft(u.date);
-        if (n !== null && n < 0) overdue++;
-        else if (n !== null && n <= 30) up30++;
+        if (n!==null && n<0) overdue++;
+        else if (n!==null && n<=30) up30++;
       }
-      s[co.cin] = { total: rules.length, filed, overdue, up30 };
+      s[co.cin] = {total:rules.length, filed, overdue, up30};
     }
     return s;
   }, [companies]);
@@ -442,8 +447,8 @@ export default function App() {
     try {
       const p = await parseMDS(file);
       if (!p.master.cin) { setUploadErr("CIN not found in file."); setUploading(false); return; }
-      const ex = db.companies[p.master.cin] || { filingStatus: {}, documents: [] };
-      await saveCompanyToBackend({ ...ex, ...p.master, directors: p.directors, charges: p.charges, updatedAt: new Date().toISOString(), filingStatus: ex.filingStatus || {}, documents: ex.documents || [] });
+      const ex = db.companies[p.master.cin] || {filingStatus:{}, documents:[]};
+      await saveCompanyToBackend({...ex, ...p.master, directors:p.directors, charges:p.charges, updatedAt:new Date().toISOString(), filingStatus:ex.filingStatus||{}, documents:ex.documents||[]});
       setShowUpload(false); setSelCin(p.master.cin); setScreen("company"); setTab("compliances");
     } catch (e) { setUploadErr("Failed: " + e.message); }
     setUploading(false);
@@ -454,21 +459,21 @@ export default function App() {
     setUploading(true); setUploadErr("");
     try {
       const txt = await extractPdfText(file);
-      const p = type === "aoc4" ? parseAOC4(txt, file.name) : parseMGT7(txt, file.name);
+      const p = type==="aoc4" ? parseAOC4(txt, file.name) : parseMGT7(txt, file.name);
       if (!p.cin) { setUploadErr("CIN not found. Ensure this is a text-based MCA eForm PDF."); setUploading(false); return; }
-      const ex = db.companies[p.cin] || { cin: p.cin, filingStatus: {}, documents: [], hasCharges: false, listedStatus: "Unlisted", companyStatus: "Active" };
+      const ex = db.companies[p.cin] || {cin:p.cin, filingStatus:{}, documents:[], hasCharges:false, listedStatus:"Unlisted", companyStatus:"Active"};
       const autoFiled = {
-        ...(type === "mgt7" && p.srn ? { [p.isSmallCompany === "Yes" ? "mgt7a" : "mgt7"]: { status: "filed", srn: p.srn, filedDate: p.filingDate, notes: "Auto-imported from PDF" } } : {}),
-        ...(type === "aoc4" && p.srn ? { aoc4: { status: "filed", srn: p.srn, filedDate: p.filingDate, notes: "Auto-imported from PDF" } } : {}),
+        ...(type==="mgt7"&&p.srn?{[p.isSmallCompany==="Yes"?"mgt7a":"mgt7"]:{status:"filed",srn:p.srn,filedDate:p.filingDate,notes:"Auto-imported from PDF"}}:{}),
+        ...(type==="aoc4"&&p.srn?{aoc4:{status:"filed",srn:p.srn,filedDate:p.filingDate,notes:"Auto-imported from PDF"}}:{}),
       };
       const updated = {
-        ...ex, cin: p.cin, companyName: p.companyName || ex.companyName, lastAGM: p.lastAGM || ex.lastAGM,
-        isSmallCompany: p.isSmallCompany || ex.isSmallCompany || "No", companyType: p.companyType || ex.companyType || "Private",
-        ...(p.turnover ? { turnover: p.turnover } : {}), ...(p.networth ? { networth: p.networth } : {}),
-        ...(p.paidUpCapital ? { paidUpCapital: p.paidUpCapital } : {}), ...(p.directors?.length ? { directors: p.directors } : {}),
-        updatedAt: new Date().toISOString(),
-        documents: [...(ex.documents || []).filter(d => d.srn !== p.srn), { type: p.type, form: type === "aoc4" ? "AOC-4" : "MGT-7/MGT-7A", srn: p.srn, filingDate: p.filingDate, fyFrom: p.fyFrom, fyTo: p.fyTo || "", fileName: file.name, auditor: p.auditor || "" }],
-        filingStatus: { ...(ex.filingStatus || {}), ...autoFiled }
+        ...ex, cin:p.cin, companyName:p.companyName||ex.companyName, lastAGM:p.lastAGM||ex.lastAGM,
+        isSmallCompany:p.isSmallCompany||ex.isSmallCompany||"No", companyType:p.companyType||ex.companyType||"Private",
+        ...(p.turnover?{turnover:p.turnover}:{}), ...(p.networth?{networth:p.networth}:{}),
+        ...(p.paidUpCapital?{paidUpCapital:p.paidUpCapital}:{}), ...(p.directors?.length?{directors:p.directors}:{}),
+        updatedAt:new Date().toISOString(),
+        documents:[...(ex.documents||[]).filter(d=>d.srn!==p.srn), {type:p.type, form:type==="aoc4"?"AOC-4":"MGT-7/MGT-7A", srn:p.srn, filingDate:p.filingDate, fyFrom:p.fyFrom, fyTo:p.fyTo||"", fileName:file.name, auditor:p.auditor||""}],
+        filingStatus:{...(ex.filingStatus||{}), ...autoFiled}
       };
       await saveCompanyToBackend(updated);
       setShowUpload(false); setSelCin(p.cin); setScreen("company"); setTab("compliances");
@@ -482,8 +487,9 @@ export default function App() {
   };
 
   if (dataLoading) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#f0f4f8",gap:14,fontFamily:"Inter,sans-serif",flexDirection:"column"}}>
-      <div style={{width:40,height:40,borderRadius:10,background:"linear-gradient(135deg,#1a5f8a,#00b4a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>⚖️</div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#f0f4f8",flexDirection:"column",gap:16,fontFamily:"Inter,sans-serif"}}>
+      {/* ── Logo shown on loading screen too ── */}
+      <img src="/logo.png" alt="rocSphere" style={{height:56, objectFit:"contain", marginBottom:4}}/>
       <div className="spin" style={{width:24,height:24}}/>
       <span style={{color:"#64748b",fontSize:12,fontWeight:500}}>Connecting to backend...</span>
     </div>
@@ -493,24 +499,38 @@ export default function App() {
     <div style={{fontFamily:"'Inter',sans-serif",minHeight:"100vh",background:"#f0f4f8",color:"#0d2d4a"}}>
       <style>{CSS}</style>
 
-      {/* NAVBAR */}
-      <div style={{background:"#ffffff",borderBottom:"1px solid #e2e8f0",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 6px rgba(13,45,74,.07)",height:60}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:38,height:38,borderRadius:10,background:"linear-gradient(135deg,#1a5f8a,#00b4a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,boxShadow:"0 2px 10px rgba(26,95,138,.25)",cursor:"pointer",flexShrink:0}} onClick={()=>{setScreen("dash");setSelCin(null);}}>⚖️</div>
-          <div>
-            <div style={{fontWeight:800,fontSize:15,letterSpacing:"-.4px"}}>
-              <span style={{color:"#0d2d4a"}}>roc</span><span style={{color:"#00b4a6"}}>Sphere</span>
-            </div>
-            <div style={{fontSize:9,color:"#94a3b8",fontWeight:500,textTransform:"uppercase",letterSpacing:".7px",marginTop:1}}>Compliance Software</div>
-          </div>
-          {screen==="company"&&company&&(
-            <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:12,paddingLeft:12,borderLeft:"1px solid #e2e8f0"}}>
-              <span style={{fontSize:10,color:"#94a3b8",cursor:"pointer",fontWeight:500,transition:".13s"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>Dashboard</span>
-              <span style={{color:"#cbd5e1",fontSize:12}}>›</span>
-              <span style={{fontSize:11,color:"#1a5f8a",fontWeight:600,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{company.companyName}</span>
-            </div>
+      {/* ══ NAVBAR ══════════════════════════════════════════════════════════════ */}
+      <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 6px rgba(13,45,74,.07)",height:62}}>
+
+        {/* Left — Logo + breadcrumb */}
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+
+          {/* ── LOGO IMAGE ── Place logo.png in your /public folder ── */}
+          <img
+            src="/logo.png"
+            alt="rocSphere"
+            onClick={()=>{setScreen("dash");setSelCin(null);}}
+            style={{height:40, objectFit:"contain", cursor:"pointer", flexShrink:0}}
+          />
+
+          {/* Divider */}
+          <div style={{width:1,height:28,background:"#e2e8f0",flexShrink:0}}/>
+
+          {/* Page label / breadcrumb */}
+          {screen==="dash"?(
+            <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".6px"}}>Dashboard</div>
+          ):(
+            screen==="company"&&company&&(
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:"#94a3b8",cursor:"pointer",fontWeight:500,transition:".13s"}} onClick={()=>{setScreen("dash");setSelCin(null);}}>Dashboard</span>
+                <span style={{color:"#cbd5e1",fontSize:13}}>›</span>
+                <span style={{fontSize:11,color:"#1a5f8a",fontWeight:700,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{company.companyName}</span>
+              </div>
+            )
           )}
         </div>
+
+        {/* Right — alerts + CTA */}
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {globalUpcoming.length>0&&(
             <div style={{display:"flex",alignItems:"center",gap:5,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:7,padding:"5px 11px",cursor:"pointer"}} onClick={()=>setScreen("dash")}>
@@ -518,42 +538,48 @@ export default function App() {
               <span style={{fontSize:10,fontWeight:700,color:"#d97706"}}>{globalUpcoming.length} due in 90d</span>
             </div>
           )}
-          <button className="btn pri" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>+ Add / Update Company</button>
+          <button className="btn pri" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>
+            + Add / Update Company
+          </button>
         </div>
       </div>
 
+      {/* Backend error banner */}
       {backendErr&&(
         <div style={{background:"#fef2f2",borderBottom:"1px solid #fecaca",padding:"8px 24px",fontSize:11,color:"#dc2626",textAlign:"center",fontWeight:500}}>
-          Backend connection issue: {backendErr}
+          ⚠ Backend connection issue: {backendErr}
         </div>
       )}
 
+      {/* ══ MAIN CONTENT ═══════════════════════════════════════════════════════ */}
       <div style={{maxWidth:1160,margin:"0 auto",padding:"24px 16px"}}>
 
-        {/* ── DASHBOARD ── */}
+        {/* ── DASHBOARD ───────────────────────────────────────────────────────── */}
         {screen==="dash"&&(
           <div className="up">
-            {/* Stats row */}
+            {/* Stat cards */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:22}}>
               {[
-                ["Companies", companies.length, "#1a5f8a", "#eff6ff", "#bfdbfe", "🏢"],
-                ["Applicable Rules", companies.reduce((a,c)=>a+(COMPLIANCE_RULES.filter(r=>r.applies(c)).length),0), "#0d7a70", "#f0fdfa", "#99f6e4", "📋"],
-                ["Overdue", companies.reduce((a,c)=>a+(coStats[c.cin]?.overdue||0),0), "#dc2626", "#fef2f2", "#fecaca", "⚠️"],
-                ["Due in 30 Days", globalUpcoming.filter(x=>x.n<=30).length, "#d97706", "#fffbeb", "#fde68a", "📅"],
-              ].map(([l,v,col,bg,bd,ic])=>(
+                ["Companies",          companies.length,                                                         "#1a5f8a","#eff6ff","🏢"],
+                ["Applicable Rules",   companies.reduce((a,c)=>a+(COMPLIANCE_RULES.filter(r=>r.applies(c)).length),0), "#0d7a70","#f0fdfa","📋"],
+                ["Overdue",            companies.reduce((a,c)=>a+(coStats[c.cin]?.overdue||0),0),               "#dc2626","#fef2f2","⚠️"],
+                ["Due in 30 Days",     globalUpcoming.filter(x=>x.n<=30).length,                                "#d97706","#fffbeb","📅"],
+              ].map(([l,v,col,bg,ic])=>(
                 <div key={l} className="card" style={{padding:"16px 18px",borderTop:`3px solid ${col}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                     <div>
                       <div style={{fontSize:28,fontWeight:800,color:col,fontFamily:"IBM Plex Mono,monospace",lineHeight:1.1}}>{v}</div>
                       <div style={{fontSize:10,color:"#64748b",marginTop:5,fontWeight:600,textTransform:"uppercase",letterSpacing:".4px"}}>{l}</div>
                     </div>
-                    <span style={{fontSize:20,opacity:.5}}>{ic}</span>
+                    <span style={{fontSize:22,opacity:.45}}>{ic}</span>
                   </div>
                 </div>
               ))}
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:16,alignItems:"start"}}>
+
+              {/* Companies list */}
               <div>
                 <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>Companies ({companies.length})</div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -561,11 +587,11 @@ export default function App() {
                     <div className="card" style={{padding:"52px 20px",textAlign:"center"}}>
                       <div style={{fontSize:40,marginBottom:12}}>📂</div>
                       <div style={{fontSize:14,fontWeight:700,color:"#334155",marginBottom:6}}>No companies yet</div>
-                      <div style={{fontSize:11,color:"#94a3b8",marginBottom:18}}>Upload an MDS Excel or AOC-4/MGT-7 PDF to get started</div>
+                      <div style={{fontSize:11,color:"#94a3b8",marginBottom:18}}>Upload an MDS Excel or AOC-4 / MGT-7 PDF to get started</div>
                       <button className="btn pri" onClick={()=>setShowUpload(true)}>+ Add Company</button>
                     </div>
                   ):companies.map(co=>{
-                    const st=coStats[co.cin]||{};
+                    const st = coStats[co.cin]||{};
                     const pct = st.total ? Math.round((st.filed/st.total)*100) : 0;
                     return (
                       <div key={co.cin} className="card" style={{padding:"14px 16px",cursor:"pointer"}} onClick={()=>{setSelCin(co.cin);setScreen("company");setTab("compliances");setFilterCat("All");setFilterSt("All");setSearch("");}}>
@@ -585,13 +611,14 @@ export default function App() {
                             <div style={{textAlign:"center",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 11px"}}><div style={{fontSize:16,fontWeight:800,color:"#1a5f8a",fontFamily:"IBM Plex Mono,monospace"}}>{st.total}</div><div style={{fontSize:8,color:"#1a5f8a",fontWeight:700,marginTop:1}}>TOTAL</div></div>
                           </div>
                         </div>
+                        {/* Progress bar */}
                         <div style={{marginTop:10,paddingTop:9,borderTop:"1px solid #f1f5f9"}}>
                           <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#94a3b8",marginBottom:5}}>
-                            <span>Last AGM: <span style={{color:"#475569",fontWeight:600}}>{co.lastAGM||"-"}</span></span>
+                            <span>AGM: <span style={{color:"#475569",fontWeight:600}}>{co.lastAGM||"-"}</span></span>
                             <span style={{color:"#1a5f8a",fontWeight:700}}>{pct}% filed ({st.filed||0}/{st.total})</span>
                           </div>
                           <div style={{height:4,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,#1a5f8a,#00b4a6)`,borderRadius:4,transition:".5s ease"}}/>
+                            <div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#1a5f8a,#00b4a6)",borderRadius:4,transition:".5s ease"}}/>
                           </div>
                         </div>
                       </div>
@@ -604,18 +631,16 @@ export default function App() {
               <div>
                 <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",marginBottom:10,letterSpacing:".5px",textTransform:"uppercase"}}>Upcoming (90 Days)</div>
                 <div className="card" style={{overflow:"hidden"}}>
-                  {/* Panel header */}
-                  <div style={{padding:"10px 14px",background:"linear-gradient(135deg,#1a5f8a,#0d2d4a)",borderBottom:"none"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.9)"}}>Compliance Deadlines</div>
-                    <div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:1}}>Next 90 days · unfiled only</div>
+                  <div style={{padding:"11px 14px",background:"linear-gradient(135deg,#1a5f8a,#0d2d4a)"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.95)"}}>Compliance Deadlines</div>
+                    <div style={{fontSize:9,color:"rgba(255,255,255,.45)",marginTop:1}}>Next 90 days · unfiled only</div>
                   </div>
                   {globalUpcoming.length===0?(
                     <div style={{padding:"28px 16px",textAlign:"center",color:"#94a3b8",fontSize:11}}>
-                      <div style={{fontSize:22,marginBottom:6}}>✅</div>
-                      No deadlines in next 90 days
+                      <div style={{fontSize:24,marginBottom:6}}>✅</div>No deadlines in next 90 days
                     </div>
                   ):globalUpcoming.slice(0,12).map((item,i)=>{
-                    const u=urgency(item.n);
+                    const u = urgency(item.n);
                     return (
                       <div key={i} className="row" style={{padding:"10px 14px",borderBottom:i<Math.min(globalUpcoming.length,12)-1?"1px solid #f1f5f9":"none",cursor:"pointer"}} onClick={()=>{setSelCin(item.cin);setScreen("company");setTab("compliances");}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
@@ -638,11 +663,11 @@ export default function App() {
           </div>
         )}
 
-        {/* ── COMPANY DETAIL ── */}
+        {/* ── COMPANY DETAIL ──────────────────────────────────────────────────── */}
         {screen==="company"&&company&&(
           <div className="up">
             {/* Header */}
-            <div className="card" style={{padding:"16px 20px",marginBottom:14,borderTop:"3px solid #00b4a6",background:"linear-gradient(135deg,#ffffff 70%,#f0fdfa)"}}>
+            <div className="card" style={{padding:"16px 20px",marginBottom:14,borderTop:"3px solid #00b4a6",background:"linear-gradient(135deg,#fff 60%,#f0fdfa)"}}>
               <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:10}}>
                 <div>
                   <div style={{fontSize:9,fontWeight:700,color:"#00b4a6",letterSpacing:".7px",textTransform:"uppercase",marginBottom:5}}>Company Profile</div>
@@ -653,7 +678,7 @@ export default function App() {
                   {company.companyStatus&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0"}}>{company.companyStatus}</span>}
                   {company.isSmallCompany==="Yes"&&<span className="bg" style={{background:"#f0fdfa",color:"#0d7a70",border:"1px solid #99f6e4"}}>Small Co.</span>}
                   <span className="bg" style={{background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0"}}>{company.companyType}</span>
-                  <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>Update MDS</button>
+                  <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mds");setUploadErr("");}}>↑ Update MDS</button>
                   <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("aoc4");setUploadErr("");}}>+ AOC-4</button>
                   <button className="btn" onClick={()=>{setShowUpload(true);setUploadMode("mgt7");setUploadErr("");}}>+ MGT-7</button>
                   <button className="btn red" onClick={()=>setDelConfirm(company.cin)}>Remove</button>
@@ -663,7 +688,14 @@ export default function App() {
 
             {/* Info chips */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8,marginBottom:14}}>
-              {[["Incorporation",company.incorporationDate||"-"],["Last AGM",company.lastAGM||"-"],["Balance Sheet",company.balanceSheetDate||"-"],["ROC",company.rocName||"-"],["Paid-up Capital",company.paidUpCapital?`Rs.${(+company.paidUpCapital).toFixed(2)} Cr`:"-"],["Net Worth",company.networth?`Rs.${(+company.networth*10000000).toLocaleString("en-IN")}`:company.networth==="0.0000"?"Rs.0":"-"]].map(([l,v])=>(
+              {[
+                ["Incorporation",   company.incorporationDate||"-"],
+                ["Last AGM",        company.lastAGM||"-"],
+                ["Balance Sheet",   company.balanceSheetDate||"-"],
+                ["ROC",             company.rocName||"-"],
+                ["Paid-up Capital", company.paidUpCapital?`₹${(+company.paidUpCapital).toFixed(2)} Cr`:"-"],
+                ["Net Worth",       company.networth?`₹${(+company.networth*10000000).toLocaleString("en-IN")}`:"-"],
+              ].map(([l,v])=>(
                 <div key={l} style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px"}}>
                   <div style={{fontSize:8,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px",marginBottom:3}}>{l}</div>
                   <div style={{fontSize:11,fontWeight:600,color:"#334155"}}>{v}</div>
@@ -680,7 +712,7 @@ export default function App() {
               ))}
             </div>
 
-            {/* COMPLIANCES */}
+            {/* ── COMPLIANCES TAB ── */}
             {tab==="compliances"&&(
               <div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
@@ -701,15 +733,15 @@ export default function App() {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(310px,1fr))",gap:10}}>
                   {filtered.map(rule=>{
-                    const col=CAT_COL[rule.cat]||{bg:"#f1f5f9",bd:"#e2e8f0",txt:"#64748b"};
-                    const st=company.filingStatus?.[rule.id]||{status:"pending"};
-                    const{upcoming:u}=calcDueDates(rule,company);
-                    const n=u?daysLeft(u.date):null;
-                    const urg=urgency(n);
+                    const col = CAT_COL[rule.cat]||{bg:"#f1f5f9",bd:"#e2e8f0",txt:"#64748b"};
+                    const st = company.filingStatus?.[rule.id]||{status:"pending"};
+                    const {upcoming:u} = calcDueDates(rule, company);
+                    const n = u ? daysLeft(u.date) : null;
+                    const urg = urgency(n);
                     return (
                       <div key={rule.id} className="card" style={{padding:"14px 16px",position:"relative",borderLeft:`3px solid ${col.txt}50`}}>
                         <div style={{position:"absolute",top:12,right:12,display:"flex",gap:4}}>
-                          {st.status==="filed"&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0"}}>Filed</span>}
+                          {st.status==="filed"&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0"}}>✓ Filed</span>}
                           {st.status==="na"&&<span className="bg" style={{background:"#f1f5f9",color:"#94a3b8",border:"1px solid #e2e8f0"}}>N/A</span>}
                           {st.status==="pending"&&n!==null&&<span className="bg" style={{background:urg.bg,color:urg.col,border:`1px solid ${urg.col}30`}}>{urg.label}</span>}
                         </div>
@@ -736,41 +768,52 @@ export default function App() {
                     );
                   })}
                 </div>
-                {filtered.length===0&&<div style={{textAlign:"center",padding:"44px",color:"#94a3b8",background:"#fff",borderRadius:12,border:"1px solid #e2e8f0"}}><div style={{fontSize:28,marginBottom:8}}>🔎</div><div style={{fontSize:12,fontWeight:600}}>No compliances match filters</div></div>}
+                {filtered.length===0&&(
+                  <div style={{textAlign:"center",padding:"44px",color:"#94a3b8",background:"#fff",borderRadius:12,border:"1px solid #e2e8f0"}}>
+                    <div style={{fontSize:28,marginBottom:8}}>🔎</div>
+                    <div style={{fontSize:12,fontWeight:600}}>No compliances match filters</div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* DIRECTORS */}
+            {/* ── DIRECTORS TAB ── */}
             {tab==="directors"&&(
               <div>
                 {!(company.directors||[]).length?(
-                  <div style={{textAlign:"center",padding:"44px",color:"#94a3b8",fontSize:11,background:"#fff",borderRadius:12,border:"1px solid #e2e8f0"}}>No directors data - upload MDS Excel or MGT-7 PDF to populate</div>
+                  <div style={{textAlign:"center",padding:"44px",color:"#94a3b8",fontSize:11,background:"#fff",borderRadius:12,border:"1px solid #e2e8f0"}}>
+                    No directors data — upload MDS Excel or MGT-7 PDF to populate
+                  </div>
                 ):(
                   <div className="card" style={{overflow:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                       <thead>
                         <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-                          {["#","DIN/PAN","Name","Designation","Category","Appointed","Cessation"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",whiteSpace:"nowrap"}}>{h}</th>)}
+                          {["#","DIN/PAN","Name","Designation","Category","Appointed","Cessation"].map(h=>(
+                            <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
                         </tr>
                       </thead>
-                      <tbody>{(company.directors||[]).map((d,i)=>(
-                        <tr key={i} className="row" style={{borderBottom:i<company.directors.length-1?"1px solid #f1f5f9":"none"}}>
-                          <td style={{padding:"10px 14px",color:"#94a3b8",fontSize:10}}>{i+1}</td>
-                          <td style={{padding:"10px 14px",fontFamily:"IBM Plex Mono,monospace",fontSize:10,color:"#1a5f8a",fontWeight:600}}>{d["DIN/PAN"]||"-"}</td>
-                          <td style={{padding:"10px 14px",fontWeight:600,color:"#0d2d4a"}}>{d["Name"]||"-"}</td>
-                          <td style={{padding:"10px 14px",color:"#64748b"}}>{d["Designation"]||"-"}</td>
-                          <td style={{padding:"10px 14px",color:"#94a3b8"}}>{d["Category"]||"-"}</td>
-                          <td style={{padding:"10px 14px",color:"#64748b",whiteSpace:"nowrap"}}>{d["Date of Appointment"]||"-"}</td>
-                          <td style={{padding:"10px 14px",color:(d["Cessation Date"]&&d["Cessation Date"]!=="-")?"#dc2626":"#94a3b8"}}>{d["Cessation Date"]||"-"}</td>
-                        </tr>
-                      ))}</tbody>
+                      <tbody>
+                        {(company.directors||[]).map((d,i)=>(
+                          <tr key={i} className="row" style={{borderBottom:i<company.directors.length-1?"1px solid #f1f5f9":"none"}}>
+                            <td style={{padding:"10px 14px",color:"#94a3b8",fontSize:10}}>{i+1}</td>
+                            <td style={{padding:"10px 14px",fontFamily:"IBM Plex Mono,monospace",fontSize:10,color:"#1a5f8a",fontWeight:600}}>{d["DIN/PAN"]||"-"}</td>
+                            <td style={{padding:"10px 14px",fontWeight:600,color:"#0d2d4a"}}>{d["Name"]||"-"}</td>
+                            <td style={{padding:"10px 14px",color:"#64748b"}}>{d["Designation"]||"-"}</td>
+                            <td style={{padding:"10px 14px",color:"#94a3b8"}}>{d["Category"]||"-"}</td>
+                            <td style={{padding:"10px 14px",color:"#64748b",whiteSpace:"nowrap"}}>{d["Date of Appointment"]||"-"}</td>
+                            <td style={{padding:"10px 14px",color:(d["Cessation Date"]&&d["Cessation Date"]!=="-")?"#dc2626":"#94a3b8"}}>{d["Cessation Date"]||"-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
                     </table>
                   </div>
                 )}
               </div>
             )}
 
-            {/* DOCUMENTS */}
+            {/* ── DOCUMENTS TAB ── */}
             {tab==="documents"&&(
               <div>
                 <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginBottom:12}}>
@@ -784,14 +827,16 @@ export default function App() {
                     {(company.documents||[]).map((doc,i)=>(
                       <div key={i} className="card" style={{padding:"13px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
                         <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                          <div style={{width:38,height:38,borderRadius:9,background:doc.type==="aoc4"?"#eff6ff":"#f0fdfa",border:`1px solid ${doc.type==="aoc4"?"#bfdbfe":"#99f6e4"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{doc.type==="aoc4"?"📊":"📋"}</div>
+                          <div style={{width:38,height:38,borderRadius:9,background:doc.type==="aoc4"?"#eff6ff":"#f0fdfa",border:`1px solid ${doc.type==="aoc4"?"#bfdbfe":"#99f6e4"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
+                            {doc.type==="aoc4"?"📊":"📋"}
+                          </div>
                           <div>
                             <div style={{fontSize:11,fontWeight:700,color:"#1a5f8a"}}>{doc.form||doc.type.toUpperCase()} <span className="mono" style={{fontSize:10,color:"#94a3b8",fontWeight:400}}>{doc.srn}</span></div>
-                            <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{doc.fileName} · Filed: {doc.filingDate||"-"} · FY {doc.fyFrom?.slice(6)||"-"} - {doc.fyTo?.slice(6)||"-"}</div>
+                            <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{doc.fileName} · Filed: {doc.filingDate||"-"} · FY {doc.fyFrom?.slice(6)||"-"} – {doc.fyTo?.slice(6)||"-"}</div>
                             {doc.auditor&&<div style={{fontSize:9,color:"#64748b",marginTop:1}}>Auditor: {doc.auditor}</div>}
                           </div>
                         </div>
-                        {doc.filingDate&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0"}}>{doc.filingDate}</span>}
+                        {doc.filingDate&&<span className="bg" style={{background:"#f0fdf4",color:"#16a34a",border:"1px solid #bbf7d0"}}>✓ {doc.filingDate}</span>}
                       </div>
                     ))}
                   </div>
@@ -799,44 +844,59 @@ export default function App() {
               </div>
             )}
 
-            {/* FINANCIALS */}
+            {/* ── FINANCIALS TAB ── */}
             {tab==="financials"&&(
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div className="card" style={{padding:"15px 18px"}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#1a5f8a",marginBottom:12,paddingBottom:8,borderBottom:"2px solid #eff6ff"}}>Capital Structure</div>
-                  {[["Authorised Capital",company.authorisedCapital?(+company.authorisedCapital*10000000).toLocaleString("en-IN"):"-"],["Paid-up Capital",company.paidUpCapital?(+company.paidUpCapital*10000000).toLocaleString("en-IN"):"-"],["Net Worth",company.networth?(+company.networth*10000000).toLocaleString("en-IN"):"-"]].map(([l,v])=>(
+                  {[
+                    ["Authorised Capital", company.authorisedCapital?(+company.authorisedCapital*10000000).toLocaleString("en-IN"):"-"],
+                    ["Paid-up Capital",    company.paidUpCapital?(+company.paidUpCapital*10000000).toLocaleString("en-IN"):"-"],
+                    ["Net Worth",          company.networth?(+company.networth*10000000).toLocaleString("en-IN"):"-"],
+                  ].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
                       <span style={{fontSize:10,color:"#64748b"}}>{l}</span>
-                      <span style={{fontSize:11,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"#0d2d4a"}}>Rs.{v}</span>
+                      <span style={{fontSize:11,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"#0d2d4a"}}>₹{v}</span>
                     </div>
                   ))}
                 </div>
                 <div className="card" style={{padding:"15px 18px"}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#0d7a70",marginBottom:12,paddingBottom:8,borderBottom:"2px solid #f0fdfa"}}>P&L Summary</div>
-                  {[["Turnover",company.turnover?(+company.turnover*10000000).toLocaleString("en-IN"):"-"],["Net Profit / Loss",company.netProfit?(+company.netProfit*10000000).toLocaleString("en-IN"):"-"]].map(([l,v])=>(
+                  {[
+                    ["Turnover",        company.turnover?(+company.turnover*10000000).toLocaleString("en-IN"):"-"],
+                    ["Net Profit/Loss", company.netProfit?(+company.netProfit*10000000).toLocaleString("en-IN"):"-"],
+                  ].map(([l,v])=>(
                     <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
                       <span style={{fontSize:10,color:"#64748b"}}>{l}</span>
-                      <span style={{fontSize:11,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"#0d2d4a"}}>Rs.{v}</span>
+                      <span style={{fontSize:11,fontWeight:700,fontFamily:"IBM Plex Mono,monospace",color:"#0d2d4a"}}>₹{v}</span>
                     </div>
                   ))}
                 </div>
                 <div className="card" style={{padding:"15px 18px",gridColumn:"1/-1"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#d97706",marginBottom:12,paddingBottom:8,borderBottom:"2px solid #fffbeb"}}>Manual Entry - Financial Data</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#d97706",marginBottom:12,paddingBottom:8,borderBottom:"2px solid #fffbeb"}}>Manual Entry — Financial Data</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:10}}>
-                    {[["turnover","Turnover (Rs. Cr)"],["networth","Net Worth (Rs. Cr)"],["netProfit","Net Profit (Rs. Cr)"]].map(([k,l])=>(
+                    {[["turnover","Turnover (₹ Cr)"],["networth","Net Worth (₹ Cr)"],["netProfit","Net Profit (₹ Cr)"]].map(([k,l])=>(
                       <div key={k}>
                         <label style={{fontSize:8,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>{l}</label>
                         <input className="inp" type="number" step="0.0001" placeholder="0.0000" value={company[k]||""} onChange={async e=>{
-                          const updated={...company,[k]:e.target.value};
+                          const updated = {...company, [k]:e.target.value};
                           try { await saveCompanyToBackend(updated); } catch(err) { alert("Save failed"); }
                         }}/>
                       </div>
                     ))}
                   </div>
-                  <div style={{fontSize:9,color:"#94a3b8",marginBottom:10}}>Enter in Crore (Rs. Cr). These values determine applicability of CSR and XBRL filings.</div>
+                  <div style={{fontSize:9,color:"#94a3b8",marginBottom:10}}>Enter in Crore (₹ Cr). These values determine applicability of CSR and XBRL filings.</div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(215px,1fr))",gap:6}}>
-                    {[["PaidUp >= Rs.500 Cr XBRL",+company.paidUpCapital>=500],["Turnover >= Rs.500 Cr XBRL",+company.turnover>=500],["NW >= Rs.500 Cr CSR",+company.networth>=500],["Turnover >= Rs.1000 Cr CSR",+company.turnover>=1000],["Net Profit >= Rs.5 Cr CSR",+company.netProfit>=5]].map(([l,v])=>(
-                      <div key={l} style={{fontSize:9,color:v?"#dc2626":"#16a34a",background:v?"#fef2f2":"#f0fdf4",padding:"5px 9px",borderRadius:5,border:`1px solid ${v?"#fecaca":"#bbf7d0"}`,fontWeight:600}}>{v?"⚠ ":"✓ "}{l}</div>
+                    {[
+                      ["PaidUp ≥ ₹500 Cr → XBRL",   +company.paidUpCapital>=500],
+                      ["Turnover ≥ ₹500 Cr → XBRL",  +company.turnover>=500],
+                      ["NW ≥ ₹500 Cr → CSR",          +company.networth>=500],
+                      ["Turnover ≥ ₹1000 Cr → CSR",   +company.turnover>=1000],
+                      ["Net Profit ≥ ₹5 Cr → CSR",    +company.netProfit>=5],
+                    ].map(([l,v])=>(
+                      <div key={l} style={{fontSize:9,color:v?"#dc2626":"#16a34a",background:v?"#fef2f2":"#f0fdf4",padding:"5px 9px",borderRadius:5,border:`1px solid ${v?"#fecaca":"#bbf7d0"}`,fontWeight:600}}>
+                        {v?"⚠ ":"✓ "}{l}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -846,17 +906,26 @@ export default function App() {
         )}
       </div>
 
-      {/* UPLOAD MODAL */}
-      {showUpload&&<UploadModal mode={uploadMode} setMode={setUploadMode} onMds={handleMDS} onPdf={handlePDF} loading={uploading} err={uploadErr} onClose={()=>!uploading&&setShowUpload(false)}/>}
+      {/* ══ MODALS ══════════════════════════════════════════════════════════════ */}
 
-      {/* EDIT STATUS MODAL */}
+      {/* Upload modal */}
+      {showUpload&&(
+        <UploadModal
+          mode={uploadMode} setMode={setUploadMode}
+          onMds={handleMDS} onPdf={handlePDF}
+          loading={uploading} err={uploadErr}
+          onClose={()=>!uploading&&setShowUpload(false)}
+        />
+      )}
+
+      {/* Edit filing status modal */}
       {editStatus&&(()=>{
-        const rule=COMPLIANCE_RULES.find(r=>r.id===editStatus.id);
+        const rule = COMPLIANCE_RULES.find(r=>r.id===editStatus.id);
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&setEditStatus(null)}>
             <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"22px",width:"100%",maxWidth:420,boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#1a5f8a,#00b4a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>📋</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                <div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#1a5f8a,#00b4a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>📋</div>
                 <div>
                   <div style={{fontSize:12,fontWeight:700,color:"#0d2d4a"}}>{rule?.form}</div>
                   <div style={{fontSize:9,color:"#94a3b8"}}>{rule?.title}</div>
@@ -868,13 +937,15 @@ export default function App() {
         );
       })()}
 
-      {/* DELETE CONFIRM */}
+      {/* Delete confirm modal */}
       {delConfirm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
           <div style={{background:"#fff",border:"1px solid #fecaca",borderRadius:14,padding:"28px",width:"100%",maxWidth:360,textAlign:"center",boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
             <div style={{width:52,height:52,borderRadius:14,background:"#fef2f2",border:"1px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,margin:"0 auto 14px"}}>⚠️</div>
             <div style={{fontSize:15,fontWeight:700,marginBottom:6,color:"#0d2d4a"}}>Remove Company?</div>
-            <div style={{fontSize:11,color:"#64748b",marginBottom:22,lineHeight:1.6}}>All data for <strong style={{color:"#0d2d4a"}}>{db?.companies[delConfirm]?.companyName}</strong> will be permanently removed from the database.</div>
+            <div style={{fontSize:11,color:"#64748b",marginBottom:22,lineHeight:1.6}}>
+              All data for <strong style={{color:"#0d2d4a"}}>{db?.companies[delConfirm]?.companyName}</strong> will be permanently removed from the database.
+            </div>
             <div style={{display:"flex",gap:8,justifyContent:"center"}}>
               <button className="btn" style={{padding:"8px 20px"}} onClick={()=>setDelConfirm(null)}>Cancel</button>
               <button className="btn red" style={{padding:"8px 20px"}} onClick={()=>deleteCompany(delConfirm)}>Yes, Remove</button>
