@@ -7,7 +7,12 @@ import os
 import logging
 
 # ── Logging ────────────────────────────────────────────────────────────────────
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 logger = logging.getLogger(__name__)
 
 # ── FastAPI App ───────────────────────────────────────────────────────────────
@@ -48,14 +53,16 @@ try:
         MONGO_URL,
         serverSelectionTimeoutMS=5000,
         connectTimeoutMS=10000,
-        socketTimeoutMS=10000
+        socketTimeoutMS=10000,
+        maxPoolSize=50,
+        retryWrites=True
     )
 
     # Test connection
     client.admin.command("ping")
 
     db = client["rocsphere"]
-    app.mongodb = db
+    app.state.mongodb = db
 
     logger.info("✅ MongoDB connected successfully")
 
@@ -70,13 +77,19 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
 def home():
     return {"message": "RocSphere Backend Running"}
 
+#===startup======================================================================
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("🚀 RocSphere backend started")
+
 # ── Health check (ping this from UptimeRobot every 5 min to stay awake) ────────
 # UptimeRobot URL: https://rocsphere.onrender.com/health
 @app.get("/health")
 def health():
     mongo_ok = False
     try:
-        if app.mongodb is not None:
+        if hasattr(app.state, "mongodb") and app.state.mongodb is not None:
             app.mongodb.client.admin.command("ping")
             mongo_ok = True
     except Exception:
