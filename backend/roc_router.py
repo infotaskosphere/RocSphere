@@ -295,6 +295,136 @@ def send_reminder(data: Dict[str, Any], request: Request):
     }
 
 
+
+# ───────────────────────────────────────────────────────────────────────
+# Save Document Analysis Result
+# (Called after frontend parses PDF and runs intelligence engine)
+# ───────────────────────────────────────────────────────────────────────
+
+@router.post("/document-analysis/{cin}")
+def save_document_analysis(cin: str, data: Dict[str, Any], request: Request):
+    """
+    Save parsed document analysis for a company.
+
+    Expected payload:
+    {
+        "documents": [...],          // list of parsed doc records
+        "intelligence": {...},       // alerts, advice, autoUpdates, masterDiffs
+        "crossIssues": [...],        // cross-verification issues
+        "parsedAt": "ISO datetime"
+    }
+    """
+    db = get_db(request)
+
+    company = db.roc_companies.find_one(
+        {"cin": cin, "firm_id": FIRM_ID}
+    )
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    analysis_record = {
+        "cin":         cin,
+        "firm_id":     FIRM_ID,
+        "documents":   data.get("documents", []),
+        "intelligence": data.get("intelligence", {}),
+        "crossIssues": data.get("crossIssues", []),
+        "parsedAt":    data.get("parsedAt", datetime.utcnow().isoformat()),
+        "updatedAt":   datetime.utcnow().isoformat(),
+    }
+
+    db.document_analysis.update_one(
+        {"cin": cin, "firm_id": FIRM_ID},
+        {"$set": analysis_record},
+        upsert=True
+    )
+
+    # Also update sign status summary on the company record
+    sign_summary = {}
+    for doc in data.get("documents", []):
+        doc_type = doc.get("type", "unknown")
+        sign_info = doc.get("signInfo", {})
+        sign_summary[doc_type] = {
+            "signStatus":    sign_info.get("signStatus", "unknown"),
+            "isSignedCopy":  sign_info.get("isSignedCopy", False),
+            "isDraft":       sign_info.get("isDraft", False),
+            "fileName":      doc.get("fileName", ""),
+            "srn":           doc.get("srn", ""),
+            "filingDate":    doc.get("filingDate", ""),
+        }
+
+    db.roc_companies.update_one(
+        {"cin": cin, "firm_id": FIRM_ID},
+        {"$set": {
+            "documentSignStatus": sign_summary,
+            "lastAnalysedAt": datetime.utcnow().isoformat(),
+        }}
+    )
+
+    return {
+        "success": True,
+        "message": "Document analysis saved",
+        "sign_summary": sign_summary
+    }
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Get Document Analysis for a company
+# ───────────────────────────────────────────────────────────────────────
+
+@router.get("/document-analysis/{cin}")
+def get_document_analysis(cin: str, request: Request):
+    """Return the latest document analysis for a company."""
+    db = get_db(request)
+
+    record = db.document_analysis.find_one(
+        {"cin": cin, "firm_id": FIRM_ID},
+        {"_id": 0}
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="No analysis found for this company")
+
+    return record
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Get Sign Status Summary for all companies
+# ───────────────────────────────────────────────────────────────────────
+
+@router.get("/sign-status-summary")
+def get_sign_status_summary(request: Request):
+    """
+    Returns sign status of uploaded documents for all companies.
+    Useful for dashboard-level overview of unsigned/draft documents.
+    """
+    db = get_db(request)
+
+    companies = list(
+        db.roc_companies.find(
+            {"firm_id": FIRM_ID, "documentSignStatus": {"$exists": True}},
+            {"_id": 0, "cin": 1, "companyName": 1, "documentSignStatus": 1, "lastAnalysedAt": 1}
+        )
+    )
+
+    result = []
+    for co in companies:
+        sign_status = co.get("documentSignStatus", {})
+        unsigned_forms = [
+            form_type for form_type, info in sign_status.items()
+            if info.get("isDraft") or info.get("signStatus") == "draft"
+        ]
+        result.append({
+            "cin":           co["cin"],
+            "companyName":   co.get("companyName", ""),
+            "signStatus":    sign_status,
+            "unsignedForms": unsigned_forms,
+            "hasUnsigned":   len(unsigned_forms) > 0,
+            "lastAnalysedAt": co.get("lastAnalysedAt", ""),
+        })
+
+    return result
+
+
+
 # ───────────────────────────────────────────────────────────────────────
 # Get Reminder Log for a company
 # ───────────────────────────────────────────────────────────────────────
@@ -303,7 +433,6 @@ def send_reminder(data: Dict[str, Any], request: Request):
 def get_reminder_log(cin: str, request: Request):
     """Return last 50 reminders sent for a given company name / cin."""
     db = get_db(request)
-    # We log by company_name; also support CIN lookup via companies collection
     company = db.roc_companies.find_one({"cin": cin, "firm_id": FIRM_ID}, {"_id": 0})
     company_name = company.get("companyName", "") if company else ""
 
