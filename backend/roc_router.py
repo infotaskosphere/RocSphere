@@ -3,7 +3,11 @@ from typing import Dict, Any, Optional
 from pymongo import ASCENDING, DESCENDING
 from datetime import datetime
 
-# ── Router Configuration ───────────────────────────────────────────────
+
+# ───────────────────────────────────────────────────────────────────────
+# Router Configuration
+# ───────────────────────────────────────────────────────────────────────
+
 router = APIRouter(
     prefix="/roc",
     tags=["ROC Compliance"]
@@ -12,15 +16,29 @@ router = APIRouter(
 FIRM_ID = "default"
 
 
-# ── Get MongoDB Connection ─────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
+# Database Access Helper
+# ───────────────────────────────────────────────────────────────────────
+
 def get_db(request: Request):
+    """
+    Safely fetch MongoDB instance from FastAPI app state.
+    """
     db = request.app.state.mongodb
+
     if db is None:
-        raise HTTPException(status_code=500, detail="Database not connected")
+        raise HTTPException(
+            status_code=500,
+            detail="Database connection not available"
+        )
+
     return db
 
 
-# ── Get All Companies ──────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
+# Get All Companies
+# ───────────────────────────────────────────────────────────────────────
+
 @router.get("/companies")
 def get_all_companies(
     request: Request,
@@ -42,6 +60,7 @@ def get_all_companies(
         ]
 
     order = DESCENDING if sort_order == "desc" else ASCENDING
+
     skip = (page - 1) * limit
 
     companies_cursor = (
@@ -57,7 +76,10 @@ def get_all_companies(
     return companies
 
 
-# ── Get Single Company ─────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
+# Get Single Company
+# ───────────────────────────────────────────────────────────────────────
+
 @router.get("/companies/{cin}")
 def get_company(cin: str, request: Request):
 
@@ -69,12 +91,18 @@ def get_company(cin: str, request: Request):
     )
 
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Company not found"
+        )
 
     return company
 
 
-# ── Create or Update Company ───────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
+# Create or Update Company
+# ───────────────────────────────────────────────────────────────────────
+
 @router.post("/companies")
 def create_or_update_company(data: Dict[str, Any], request: Request):
 
@@ -83,7 +111,10 @@ def create_or_update_company(data: Dict[str, Any], request: Request):
     cin = data.get("cin")
 
     if not cin:
-        raise HTTPException(status_code=400, detail="CIN is required")
+        raise HTTPException(
+            status_code=400,
+            detail="CIN is required"
+        )
 
     data["firm_id"] = FIRM_ID
     data["updatedAt"] = datetime.utcnow().isoformat()
@@ -100,7 +131,10 @@ def create_or_update_company(data: Dict[str, Any], request: Request):
     }
 
 
-# ── Delete Company ─────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
+# Delete Company
+# ───────────────────────────────────────────────────────────────────────
+
 @router.delete("/companies/{cin}")
 def delete_company(cin: str, request: Request):
 
@@ -111,7 +145,10 @@ def delete_company(cin: str, request: Request):
     )
 
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Company not found"
+        )
 
     return {
         "success": True,
@@ -119,7 +156,10 @@ def delete_company(cin: str, request: Request):
     }
 
 
-# ── Update Filing Status ───────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
+# Update Filing Status
+# ───────────────────────────────────────────────────────────────────────
+
 @router.put("/filing-status/{cin}")
 def update_filing_status(cin: str, data: Dict[str, Any], request: Request):
 
@@ -130,12 +170,18 @@ def update_filing_status(cin: str, data: Dict[str, Any], request: Request):
     )
 
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Company not found"
+        )
 
     rule_id = data.get("rule_id")
 
     if not rule_id:
-        raise HTTPException(status_code=400, detail="rule_id is required")
+        raise HTTPException(
+            status_code=400,
+            detail="rule_id is required"
+        )
 
     filing_status = company.get("filingStatus", {})
 
