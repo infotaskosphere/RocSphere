@@ -572,6 +572,159 @@ function UploadModal({mode,setMode,onMds,onPdf,loading,err,onClose}) {
   );
 }
 
+// ── Reminder Modal (new) ─────────────────────────────────────────────────────
+function ReminderModal({company, rule, dueDate, daysLeft, onClose, onSend}) {
+  const [channel,  setChannel]  = useState("email");
+  const [toEmail,  setToEmail]  = useState(company.email||"");
+  const [toPhone,  setToPhone]  = useState("");
+  const [sending,  setSending]  = useState(false);
+  const [result,   setResult]   = useState(null); // null | {success, any_success, results}
+  const [err,      setErr]      = useState("");
+
+  const urgencyColor = daysLeft===null?"#64748b":daysLeft<0?"#dc2626":daysLeft<=7?"#dc2626":daysLeft<=30?"#d97706":"#0d7a70";
+  const urgencyLabel = daysLeft===null?"Event-based":daysLeft<0?`OVERDUE by ${Math.abs(daysLeft)} days`:daysLeft===0?"DUE TODAY":`${daysLeft} days left`;
+
+  async function handleSend() {
+    if (channel==="email"&&!toEmail)     { setErr("Enter recipient email address."); return; }
+    if (channel==="whatsapp"&&!toPhone)  { setErr("Enter recipient WhatsApp number (+91...)."); return; }
+    if (channel==="both"&&(!toEmail||!toPhone)) { setErr("Enter both email and WhatsApp number."); return; }
+    setSending(true); setErr(""); setResult(null);
+    try {
+      const res = await onSend({
+        channel, to_email:toEmail, to_phone:toPhone,
+        company_name:company.companyName, form:rule.form,
+        form_title:rule.title, due_date:dueDate, days_left:daysLeft,
+        notes:"",
+      });
+      setResult(res);
+    } catch(e) { setErr("Failed: "+e.message); }
+    setSending(false);
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
+      onClick={e=>e.target===e.currentTarget&&!sending&&onClose()}>
+      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"22px",width:"100%",maxWidth:460,boxShadow:"0 24px 64px rgba(13,45,74,.18)"}} className="up">
+
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#1a5f8a,#00b4a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>🔔</div>
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:"#0d2d4a"}}>Send Reminder</div>
+              <div style={{fontSize:9,color:"#94a3b8"}}>{company.companyName}</div>
+            </div>
+          </div>
+          {!sending&&<button className="btn" style={{padding:"4px 10px"}} onClick={onClose}>✕</button>}
+        </div>
+
+        {/* Compliance summary */}
+        <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:9,padding:"11px 14px",marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+            <span style={{fontFamily:"IBM Plex Mono,monospace",fontWeight:700,color:"#1a5f8a",fontSize:12}}>{rule.form}</span>
+            <span style={{fontSize:10,fontWeight:700,color:urgencyColor,background:urgencyColor+"15",padding:"2px 9px",borderRadius:5,border:`1px solid ${urgencyColor}30`}}>{urgencyLabel}</span>
+          </div>
+          <div style={{fontSize:10,color:"#64748b"}}>{rule.title}</div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>Due: <strong style={{color:"#334155"}}>{dueDate}</strong></div>
+        </div>
+
+        {/* Success state */}
+        {result&&(
+          <div style={{marginBottom:14}}>
+            {["email","whatsapp"].map(ch=>{
+              const r = result.results?.[ch];
+              if (!r) return null;
+              return (
+                <div key={ch} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",borderRadius:8,marginBottom:6,
+                  background:r.success?"#f0fdf4":"#fef2f2",border:`1px solid ${r.success?"#bbf7d0":"#fecaca"}`}}>
+                  <span style={{fontSize:14}}>{ch==="email"?"📧":"💬"}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11,fontWeight:700,color:r.success?"#16a34a":"#dc2626"}}>
+                      {ch==="email"?"Email":"WhatsApp"} — {r.success?"Sent successfully":"Failed"}
+                    </div>
+                    {!r.success&&r.error&&<div style={{fontSize:9,color:"#dc2626",marginTop:1}}>{r.error}</div>}
+                  </div>
+                  <span style={{fontSize:16}}>{r.success?"✓":"✗"}</span>
+                </div>
+              );
+            })}
+            {result.any_success&&(
+              <div style={{marginTop:8,textAlign:"center"}}>
+                <button className="btn teal" style={{fontSize:11}} onClick={onClose}>Done</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Form — hidden after success */}
+        {!result&&<>
+          {/* Channel selector */}
+          <div style={{marginBottom:13}}>
+            <label style={{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:6}}>Send Via</label>
+            <div style={{display:"flex",gap:5}}>
+              {[["email","📧 Email"],["whatsapp","💬 WhatsApp"],["both","📧+💬 Both"]].map(([v,l])=>(
+                <button key={v} onClick={()=>{setChannel(v);setErr("");setResult(null);}}
+                  style={{flex:1,padding:"8px 0",borderRadius:7,border:`1.5px solid ${channel===v?"#00b4a6":"#e2e8f0"}`,
+                    background:channel===v?"#f0fdfa":"#fff",color:channel===v?"#0d7a70":"#94a3b8",
+                    fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:".13s"}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Email field */}
+          {(channel==="email"||channel==="both")&&(
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>
+                Recipient Email
+              </label>
+              <input className="inp" type="email" placeholder="client@example.com"
+                value={toEmail} onChange={e=>setToEmail(e.target.value)}/>
+            </div>
+          )}
+
+          {/* WhatsApp field */}
+          {(channel==="whatsapp"||channel==="both")&&(
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>
+                WhatsApp Number (with country code)
+              </label>
+              <input className="inp" type="tel" placeholder="+919876543210"
+                value={toPhone} onChange={e=>setToPhone(e.target.value)}/>
+              <div style={{fontSize:9,color:"#94a3b8",marginTop:3}}>Must be registered on Twilio sandbox for testing.</div>
+            </div>
+          )}
+
+          {/* Message preview */}
+          <div style={{marginBottom:13}}>
+            <label style={{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".5px",display:"block",marginBottom:4}}>Message Preview</label>
+            <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:7,padding:"10px 12px",fontSize:10,color:"#334155",lineHeight:1.7,whiteSpace:"pre-wrap",fontFamily:"IBM Plex Mono,monospace",maxHeight:140,overflowY:"auto"}}>
+{`📋 ROC Compliance Reminder
+Company : ${company.companyName}
+Form    : ${rule.form} — ${rule.title}
+Due Date: ${dueDate}
+Status  : ${urgencyLabel}
+
+Please file on time to avoid penalties.
+— rocSphere`}
+            </div>
+          </div>
+
+          {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#dc2626",marginBottom:10}}>⚠ {err}</div>}
+
+          <div style={{display:"flex",gap:7,justifyContent:"flex-end"}}>
+            <button className="btn" onClick={onClose} disabled={sending}>Cancel</button>
+            <button className="btn pri" onClick={handleSend} disabled={sending}>
+              {sending?<><div className="spin" style={{width:14,height:14}}/> Sending…</>:"🔔 Send Reminder"}
+            </button>
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 // ── AGM Cluster Banner (new component) ───────────────────────────────────────
 function AGMClusterBanner({company, applicable, onEdit}) {
   const clusterRules = applicable.filter(r=>AGM_CLUSTER_IDS.includes(r.id));
@@ -627,7 +780,9 @@ export default function App() {
   const [backendErr,  setBackendErr]  = useState("");
   const [loadingMsg,  setLoadingMsg]  = useState("Connecting to backend...");
   // ── NEW STATE ──
-  const [selAY,       setSelAY]       = useState(DEFAULT_AY);
+  const [selAY,         setSelAY]         = useState(DEFAULT_AY);
+  const [reminderModal, setReminderModal] = useState(null);
+  const [reminderLog,   setReminderLog]   = useState([]);
 
   const ayOption = useMemo(()=>AY_OPTIONS.find(a=>a.value===selAY)||AY_OPTIONS[2],[selAY]);
   const calcDue  = (rule, co) => calcDueDates(rule, co, ayOption);
@@ -784,6 +939,17 @@ export default function App() {
   const updateStatus = async (cin, rid, data) => {
     try { await updateFilingStatusAPI(cin, rid, data); setEditStatus(null); }
     catch(e) { alert("Failed to update: "+e.message); }
+  };
+
+  // ── Send reminder via backend ────────────────────────────────────────────
+  const sendReminder = async (payload) => {
+    const res = await fetchWithTimeout(`${API_BASE}/send-reminder`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+    }, 15000);
+    if (!res.ok) throw new Error(`Send failed: ${res.status}`);
+    return res.json();
   };
 
   // ── Loading screen ────────────────────────────────────────────────────────────
@@ -1059,9 +1225,17 @@ export default function App() {
                           <div style={{display:"flex",gap:7}}><span style={{color:"#94a3b8",minWidth:52,fontWeight:700,textTransform:"uppercase",fontSize:8,letterSpacing:".4px"}}>Law</span><span style={{color:"#94a3b8",fontSize:9}}>{rule.section}</span></div>
                         </div>
                         <div style={{marginTop:10}}>
+                          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                           <button className="btn" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>setEditStatus({cin:company.cin,id:rule.id,current:st})}>
                             {st.status==="filed"?"Edit Status":"Update Status"}
                           </button>
+                          {st.status!=="filed"&&st.status!=="na"&&(
+                            <button className="btn" style={{fontSize:10,padding:"4px 10px",borderColor:"#bfdbfe",color:"#1a5f8a"}}
+                              onClick={()=>setReminderModal({company, rule, dueDate:u?fmt(u.date):"-", daysLeft:n})}>
+                              🔔 Remind
+                            </button>
+                          )}
+                        </div>
                         </div>
                       </div>
                     );
@@ -1228,6 +1402,17 @@ export default function App() {
           </div>
         );
       })()}
+
+      {reminderModal&&(
+        <ReminderModal
+          company={reminderModal.company}
+          rule={reminderModal.rule}
+          dueDate={reminderModal.dueDate}
+          daysLeft={reminderModal.daysLeft}
+          onClose={()=>setReminderModal(null)}
+          onSend={sendReminder}
+        />
+      )}
 
       {delConfirm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(13,45,74,.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&setDelConfirm(null)}>
