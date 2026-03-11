@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request, Query
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pymongo import ASCENDING, DESCENDING
 from datetime import datetime
 
+# ── Router Configuration ───────────────────────────────────────────────
 router = APIRouter(
     prefix="/roc",
     tags=["ROC Compliance"]
@@ -10,19 +11,26 @@ router = APIRouter(
 
 FIRM_ID = "default"
 
+
+# ── Get MongoDB Connection ─────────────────────────────────────────────
 def get_db(request: Request):
-    return request.app.mongodb
+    db = request.app.state.mongodb
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    return db
 
 
+# ── Get All Companies ──────────────────────────────────────────────────
 @router.get("/companies")
 def get_all_companies(
     request: Request,
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
-    search: str = Query(None),
+    search: Optional[str] = Query(None),
     sort_by: str = Query("updatedAt"),
     sort_order: str = Query("desc")
 ):
+
     db = get_db(request)
 
     filter_query = {"firm_id": FIRM_ID}
@@ -36,9 +44,7 @@ def get_all_companies(
     order = DESCENDING if sort_order == "desc" else ASCENDING
     skip = (page - 1) * limit
 
-    total = db.roc_companies.count_documents(filter_query)
-
-    companies = list(
+    companies_cursor = (
         db.roc_companies
         .find(filter_query, {"_id": 0})
         .sort(sort_by, order)
@@ -46,12 +52,15 @@ def get_all_companies(
         .limit(limit)
     )
 
-    # Return plain array so frontend works directly
+    companies = list(companies_cursor)
+
     return companies
 
 
+# ── Get Single Company ─────────────────────────────────────────────────
 @router.get("/companies/{cin}")
 def get_company(cin: str, request: Request):
+
     db = get_db(request)
 
     company = db.roc_companies.find_one(
@@ -65,11 +74,14 @@ def get_company(cin: str, request: Request):
     return company
 
 
+# ── Create or Update Company ───────────────────────────────────────────
 @router.post("/companies")
 def create_or_update_company(data: Dict[str, Any], request: Request):
+
     db = get_db(request)
 
     cin = data.get("cin")
+
     if not cin:
         raise HTTPException(status_code=400, detail="CIN is required")
 
@@ -82,11 +94,16 @@ def create_or_update_company(data: Dict[str, Any], request: Request):
         upsert=True
     )
 
-    return {"message": "Company saved successfully"}
+    return {
+        "success": True,
+        "message": "Company saved successfully"
+    }
 
 
+# ── Delete Company ─────────────────────────────────────────────────────
 @router.delete("/companies/{cin}")
 def delete_company(cin: str, request: Request):
+
     db = get_db(request)
 
     result = db.roc_companies.delete_one(
@@ -96,11 +113,16 @@ def delete_company(cin: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Company not found")
 
-    return {"message": "Company deleted successfully"}
+    return {
+        "success": True,
+        "message": "Company deleted successfully"
+    }
 
 
+# ── Update Filing Status ───────────────────────────────────────────────
 @router.put("/filing-status/{cin}")
 def update_filing_status(cin: str, data: Dict[str, Any], request: Request):
+
     db = get_db(request)
 
     company = db.roc_companies.find_one(
@@ -111,6 +133,7 @@ def update_filing_status(cin: str, data: Dict[str, Any], request: Request):
         raise HTTPException(status_code=404, detail="Company not found")
 
     rule_id = data.get("rule_id")
+
     if not rule_id:
         raise HTTPException(status_code=400, detail="rule_id is required")
 
@@ -128,4 +151,7 @@ def update_filing_status(cin: str, data: Dict[str, Any], request: Request):
         {"$set": {"filingStatus": filing_status}}
     )
 
-    return {"message": "Filing status updated successfully"}
+    return {
+        "success": True,
+        "message": "Filing status updated successfully"
+    }
