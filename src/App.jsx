@@ -17,16 +17,19 @@ const CUR_YEAR = TODAY.getFullYear();
 // ── AY helpers ────────────────────────────────────────────────────────────────
 // AY concept: AY "Y-(Y+1)" covers filings for FY Apr(Y-1) – Mar(Y)
 // e.g. AY 2024-25 → FY 2023-24 → Apr 1 2023 to Mar 31 2024
-const AY_OPTIONS = Array.from({length:6},(_,i)=>{
-  const y = CUR_YEAR - 1 + i; // AY label year
+const AY_OPTIONS = Array.from({length:7},(_,i)=>{
+  const y = CUR_YEAR - 4 + i; // start 4 years back from current year
   return {
     value: `${y}-${String(y+1).slice(2)}`,
     label: `AY ${y}-${String(y+1).slice(2)} (FY ${y-1}-${String(y).slice(2)})`,
-    fyStart: new Date(y-1,3,1),   // Apr 1 of (y-1)
-    fyEnd:   new Date(y,2,31,23,59,59), // Mar 31 of y
+    fyStart: new Date(y-1,3,1),          // Apr 1 of (y-1)
+    fyEnd:   new Date(y,2,31,23,59,59),  // Mar 31 of y
   };
 });
-const DEFAULT_AY = AY_OPTIONS[1].value; // current AY
+// Default = most recently COMPLETED AY (FY already ended)
+// e.g. in Mar 2026 → AY 2025-26 (FY 2024-25 ended Mar 31 2025) ← forms filed in 2025
+const DEFAULT_AY = [...AY_OPTIONS].reverse().find(a => a.fyEnd < TODAY)?.value
+                   || AY_OPTIONS[3].value;
 
 // ── AGM Cluster ───────────────────────────────────────────────────────────────
 const AGM_CLUSTER_IDS = ["aoc4","adt1","mgt14","mgt7","mgt7a"];
@@ -162,16 +165,26 @@ const calcDueDates = (rule, co, ayOption) => {
       slots.push({label:"Event-based", date:null});
   }
 
-  const ayStart = ayOption?.fyStart;
-  const ayEnd   = ayOption?.fyEnd;
+  const fyYear  = ayOption ? ayOption.fyStart.getFullYear() : null;
+  const fyLabel = fyYear ? `FY ${fyYear}-${String(fyYear+1).slice(2)}` : null;
   let relevant = slots;
-  if (ayStart && ayEnd) {
-    const inAY = slots.filter(s => s.date && s.date >= ayStart && s.date <= ayEnd);
-    if (inAY.length > 0) relevant = inAY;
-    else if (slots.every(s => !s.date)) relevant = slots;
-    else relevant = slots;
+  if (fyLabel) {
+    // Primary: match by label (most accurate)
+    const byLabel = slots.filter(s => s.label && s.label.startsWith(fyLabel));
+    if (byLabel.length > 0) {
+      relevant = byLabel;
+    } else if (slots.every(s => !s.date)) {
+      // Event-based forms — always show
+      relevant = slots;
+    } else {
+      // Fallback: date window = FY start to 18 months after FY end
+      // e.g. FY 2024-25: Apr 1 2024 → Sep 30 2026
+      const extEnd = new Date(ayOption.fyEnd);
+      extEnd.setMonth(extEnd.getMonth() + 18);
+      const inWindow = slots.filter(s => s.date && s.date >= ayOption.fyStart && s.date <= extEnd);
+      relevant = inWindow.length > 0 ? inWindow : slots;
+    }
   }
-
   const upcoming = relevant.filter(s=>s.date&&s.date>=TODAY).sort((a,b)=>a.date-b.date)[0]||null;
   const past     = relevant.filter(s=>s.date&&s.date<TODAY).sort((a,b)=>b.date-a.date)[0]||null;
   return { upcoming, past, all: relevant };
@@ -1370,10 +1383,7 @@ function AGMClusterBanner({company, applicable, onEdit}) {
 }
 
 // ── Multi-Year Data Tab ───────────────────────────────────────────────────────
-const MULTI_YEAR_AY_LIST = Array.from({length:7},(_,i)=>{
-  const y = CUR_YEAR - 4 + i;
-  return `${y}-${String(y+1).slice(2)}`;
-});
+const MULTI_YEAR_AY_LIST = AY_OPTIONS.map(a => a.value);
 
 const MY_FORMS = [
   {id:"aoc4",  form:"AOC-4",      label:"AOC-4",     cat:"Annual"},
@@ -1390,7 +1400,7 @@ const MY_FORMS = [
 ];
 
 function MultiYearTab({companies, fetchCompanies, handlePDF}) {
-  const [selAYs,    setSelAYs]   = useState(MULTI_YEAR_AY_LIST.slice(3,6));
+  const [selAYs,    setSelAYs]   = useState(MULTI_YEAR_AY_LIST.slice(0,5));
   const [editCell,  setEditCell] = useState(null);
   const [searchCo,  setSearchCo] = useState("");
   const [showForms, setShowForms]= useState(MY_FORMS.map(f=>f.id));
